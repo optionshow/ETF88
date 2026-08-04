@@ -537,6 +537,9 @@ export async function syncAndMergeSheetsDatabase(
   const defaultSpreadsheetId = targetSpreadsheetId || '1u4F6xNbGf2HqkwJL2kXxolEKUObzHWnMdHaGsbI5ypo';
   const defaultWebAppUrl = targetWebAppUrl || 'https://script.google.com/macros/s/AKfycbyAPZfZYLT1Igoo1BRAc6GDdvUcWYTV9HubJVQOGjK1NHqNsjSCpnR0kH4VCgM_6xMm/exec';
 
+  let rawSheetData: any[] | null = null;
+  let dataSource = 'Google Sheets 資料庫';
+
   try {
     const res = await fetch('/api/read-sheets-database', {
       method: 'POST',
@@ -548,17 +551,43 @@ export async function syncAndMergeSheetsDatabase(
       }),
     });
 
-    const result = await res.json();
+    if (res.ok) {
+      const result = await res.json();
+      if (result.success && Array.isArray(result.data)) {
+        rawSheetData = result.data;
+        if (result.source) dataSource = result.source;
+      }
+    }
+  } catch (err) {
+    console.log('Server /api/read-sheets-database unavailable, falling back to direct Google Apps Script Web App fetch...');
+  }
 
-    if (result.success && Array.isArray(result.data)) {
+  // Fallback for static client environment (GitHub Pages): Direct client-side fetch from Google Apps Script
+  if (!rawSheetData && defaultWebAppUrl) {
+    try {
+      const directRes = await fetch(defaultWebAppUrl);
+      if (directRes.ok) {
+        const json = await directRes.json();
+        if (json && (json.status === 'success' || Array.isArray(json.data)) && Array.isArray(json.data || json)) {
+          rawSheetData = json.data || json;
+          dataSource = 'Google Apps Script 雲端資料庫';
+        }
+      }
+    } catch (directErr) {
+      console.warn('Direct Google Apps Script fetch warning:', directErr);
+    }
+  }
+
+  if (rawSheetData && Array.isArray(rawSheetData)) {
+    try {
       let totalSyncedPeriods = 0;
       let totalFundsSynced = 0;
 
       // 1. Merge Sheets data into existing local funds
       const updatedFundsList = targetFunds.map((fund) => {
         const cleanFundCode = fund.code.replace('.TW', '').toUpperCase();
-        const sheetData = result.data.find(
-          (item: any) => item.code.toUpperCase() === cleanFundCode
+        const sheetData = rawSheetData!.find(
+          (item: any) => (item.code || '').toUpperCase() === cleanFundCode
         );
 
         const existingSnapshots = fund.snapshots || [];
@@ -591,7 +620,6 @@ export async function syncAndMergeSheetsDatabase(
                   holdings: newSnap.holdings || [],
                 });
               }
-              // APP Priority Rule: If App already has valid snapshot holdings for this date, preserve App data!
             }
           });
         }
@@ -615,7 +643,7 @@ export async function syncAndMergeSheetsDatabase(
       });
 
       // 2. Add any funds from Google Sheets that were missing locally
-      result.data.forEach((sheetItem: any) => {
+      rawSheetData.forEach((sheetItem: any) => {
         const sheetCode = (sheetItem.code || '').toUpperCase().trim();
         if (!sheetCode) return;
         const exists = updatedFundsList.some(
@@ -638,10 +666,10 @@ export async function syncAndMergeSheetsDatabase(
             category: '股票型',
             url: `https://www.google.com/search?q=${sheetCode}`,
             currentNav: 0,
-            navDate: newSnapshots[0]?.asOfDate || '2026/08/03',
+            navDate: newSnapshots[0]?.asOfDate || '2026/08/04',
             oneYearReturn: 0,
             threeYearReturn: 0,
-            asOfDate: newSnapshots[0]?.asOfDate || '2026/08/03',
+            asOfDate: newSnapshots[0]?.asOfDate || '2026/08/04',
             snapshots: newSnapshots,
             lastUpdated: new Date().toLocaleString('zh-TW'),
           });
@@ -676,7 +704,14 @@ export async function syncAndMergeSheetsDatabase(
             }),
           });
         } catch (pushErr) {
-          console.warn('Bidirectional sync push to Google Sheets warning:', pushErr);
+          try {
+            await fetch(defaultWebAppUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ fundDataList: itemsToPush }),
+              mode: 'no-cors',
+            });
+          } catch (e) {}
         }
       }
 
@@ -687,11 +722,11 @@ export async function syncAndMergeSheetsDatabase(
         updatedFunds: updatedFundsList,
         syncedPeriodsCount: totalSyncedPeriods,
         totalFundsSynced,
-        source: result.source || 'Google Sheets 資料庫',
+        source: dataSource,
       };
+    } catch (err) {
+      console.warn('Error syncing with Google Sheets database:', err);
     }
-  } catch (err) {
-    console.warn('Error syncing with Google Sheets database:', err);
   }
 
   // Fallback: save target funds to localStorage and return
