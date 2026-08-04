@@ -1,5 +1,5 @@
 {
-  "name": "基金投資明細分析",
+  "name": "主動式基金持股分析",
   "description": "自動擷取台灣熱門基金(統一奔騰、黑馬、安聯台科等)持股投資明細，每日追蹤持股變化、跨基金重疊分析、定期定額報酬率試算與Google試算表同步與自動化腳本生成。",
   "requestFramePermissions": [],
   "majorCapabilities": [
