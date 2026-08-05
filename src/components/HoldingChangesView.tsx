@@ -49,7 +49,13 @@ export const HoldingChangesView: React.FC<HoldingChangesViewProps> = ({
   selectedFundId,
   setSelectedFundId,
 }) => {
-  const isAll = selectedFundId === 'ALL';
+  const [activeFundId, setActiveFundId] = useState<string>('ALL');
+  const isAll = activeFundId === 'ALL';
+
+  const handleFundChange = (id: string) => {
+    setActiveFundId(id);
+    setSelectedFundId(id);
+  };
 
   const [latestIndex, setLatestIndex] = useState(0);
   const [prevIndex, setPrevIndex] = useState(1);
@@ -62,7 +68,7 @@ export const HoldingChangesView: React.FC<HoldingChangesViewProps> = ({
     new Set(funds.flatMap((f) => (f.snapshots || []).map((s) => s.date || s.asOfDate)))
   ).filter((d): d is string => Boolean(d)).sort((a: string, b: string) => new Date(b.replace(/\//g, '-')).getTime() - new Date(a.replace(/\//g, '-')).getTime());
 
-  const currentFund = funds.find((f) => f.id === selectedFundId);
+  const currentFund = funds.find((f) => f.id === activeFundId);
   const currentFundSnapshots = currentFund?.snapshots || [];
 
   const dateOptions = isAll
@@ -264,11 +270,11 @@ export const HoldingChangesView: React.FC<HoldingChangesViewProps> = ({
               <span>切換追蹤基金:</span>
             </span>
             <select
-              value={selectedFundId}
-              onChange={(e) => setSelectedFundId(e.target.value)}
+              value={activeFundId}
+              onChange={(e) => handleFundChange(e.target.value)}
               className="bg-white text-blue-900 font-extrabold text-xs border border-blue-300 rounded-md px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-blue-600 cursor-pointer shadow-sm"
             >
-              <option value="ALL">🌐 全部基金 (個股累計整合比較)</option>
+              <option value="ALL">🌐 全部基金</option>
               {funds.map((fund) => (
                 <option key={fund.id} value={fund.id}>
                   {fund.name} ({fund.code.replace('.TW', '')})
@@ -319,22 +325,22 @@ export const HoldingChangesView: React.FC<HoldingChangesViewProps> = ({
         <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-slate-100">
           <span className="text-[11px] font-bold text-slate-500">快速選擇:</span>
           <button
-            onClick={() => setSelectedFundId('ALL')}
+            onClick={() => handleFundChange('ALL')}
             className={`px-3 py-1 rounded-md text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
-              selectedFundId === 'ALL'
+              activeFundId === 'ALL'
                 ? 'bg-blue-600 text-white shadow-sm ring-2 ring-blue-400'
                 : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
             }`}
           >
             <Globe className="w-3.5 h-3.5" />
-            <span>全部基金 (個股累計)</span>
+            <span>全部基金</span>
           </button>
           {funds.map((fund) => (
             <button
               key={fund.id}
-              onClick={() => setSelectedFundId(fund.id)}
+              onClick={() => handleFundChange(fund.id)}
               className={`px-2.5 py-1 rounded-md text-xs font-bold transition-all cursor-pointer ${
-                selectedFundId === fund.id
+                activeFundId === fund.id
                   ? 'bg-blue-600 text-white shadow-sm ring-2 ring-blue-400'
                   : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
               }`}

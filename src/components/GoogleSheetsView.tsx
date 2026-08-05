@@ -590,7 +590,7 @@ export const GoogleSheetsView: React.FC<GoogleSheetsViewProps> = ({ funds, onUpd
             <span>部署為 Web App 或觸發器</span>
           </div>
           <p className="text-xs text-slate-600 leading-relaxed">
-            若要由 APP 直連推送，請點選「部署 &gt; 新增部署作業 &gt; 網頁應用程式 (所有人皆可存取)」，貼上 URL 即可 APP 1-Click 推送；或執行 <span className="font-semibold text-slate-900">setupDailyTrigger</span> 每日 08:00 定時更新。
+            若要由 APP 直連推送，請點選「部署 &gt; 新增部署作業 &gt; 網頁應用程式 (所有人皆可存取)」，貼上 URL 即可 APP 1-Click 推送；或執行 <span className="font-semibold text-slate-900">setupDailyTrigger</span> 每日 08:00 更新。
           </p>
         </div>
 
@@ -610,7 +610,7 @@ export const GoogleSheetsView: React.FC<GoogleSheetsViewProps> = ({ funds, onUpd
         <div className="p-3 bg-slate-800 border-b border-slate-700 flex items-center justify-between">
           <div className="flex items-center space-x-2 text-xs font-mono text-slate-200">
             <Code className="w-4 h-4 text-emerald-400" />
-            <span>Fund_Tracker.gs (Google Apps Script - 支援 APP 推送 &amp; 自動定時)</span>
+            <span>Fund_Tracker.gs (Google Apps Script - 支援 APP 推送 &amp; 自動執行)</span>
           </div>
           <button
             onClick={handleCopyScript}

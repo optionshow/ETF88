@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { FundData } from '../types';
 import { calculateStockOverlap } from '../services/fundService';
 import { ShieldAlert, BarChart3, ArrowUpDown } from 'lucide-react';
+import { Top5TrackingView } from './Top5TrackingView';
 
 interface OverlapAnalysisViewProps {
   funds: FundData[];
@@ -234,6 +235,9 @@ export const OverlapAnalysisView: React.FC<OverlapAnalysisViewProps> = ({ funds 
           </table>
         </div>
       </div>
+
+      {/* 前五大追蹤 Section */}
+      <Top5TrackingView funds={funds} />
     </div>
   );
 };
