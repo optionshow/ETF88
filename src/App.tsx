@@ -10,7 +10,7 @@ import { AlertCircle, CheckCircle2 } from 'lucide-react';
 
 export default function App() {
   const [funds, setFunds] = useState<FundData[]>([]);
-  const [selectedFundId, setSelectedFundId] = useState<string>('00981A.TW');
+  const [selectedFundId, setSelectedFundId] = useState<string>('ALL');
   const [activeTab, setActiveTab] = useState<'details' | 'changes' | 'overlap' | 'sheets'>('details');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
@@ -18,9 +18,6 @@ export default function App() {
   useEffect(() => {
     const loaded = getSavedFunds();
     setFunds(loaded);
-    if (loaded.length > 0) {
-      setSelectedFundId(loaded[0].id);
-    }
 
     // Auto-read and compare Google Sheets Database on App startup using loaded local funds as primary baseline
     syncAndMergeSheetsDatabase(loaded)
