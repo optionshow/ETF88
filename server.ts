@@ -34,36 +34,68 @@ export function normalizeDateString(str: string): string {
   return clean;
 }
 
+// Helper function to execute complete live fund scraping across all 5 funds
+async function executeAutoScrapeAll() {
+  const nowStr = new Date().toLocaleString("zh-TW", { timeZone: "Asia/Taipei" });
+  console.log(`[Scraper Engine] Executing scheduled live fund scraping at ${nowStr}...`);
+  const results: any[] = [];
+  
+  try {
+    const ez981 = await fetchEzMoneyFund("49YTW");
+    if (ez981) results.push(ez981);
+  } catch (e) {
+    console.error("[Scraper Engine] 00981A scrape error:", e);
+  }
+
+  try {
+    const ez403 = await fetchEzMoneyFund("63YTW");
+    if (ez403) results.push(ez403);
+  } catch (e) {
+    console.error("[Scraper Engine] 00403A scrape error:", e);
+  }
+
+  try {
+    const cp982 = await fetchCapitalFund("399");
+    if (cp982) results.push(cp982);
+  } catch (e) {
+    console.error("[Scraper Engine] 00982A scrape error:", e);
+  }
+
+  try {
+    const cp992 = await fetchCapitalFund("500");
+    if (cp992) results.push(cp992);
+  } catch (e) {
+    console.error("[Scraper Engine] 00992A scrape error:", e);
+  }
+
+  try {
+    const kgi407 = await fetchKgiFund("J024");
+    if (kgi407) results.push(kgi407);
+  } catch (e) {
+    console.error("[Scraper Engine] 00407A scrape error:", e);
+  }
+
+  console.log(`[Scraper Engine] Completed auto-scraping ${results.length} funds.`);
+  return results;
+}
+
 // Automated twice-daily scheduled task: 08:00 and 18:00 (Asia/Taipei)
-const TRACKED_CODES = ["00981A.TW", "00403A.TW", "00982A.TW", "00992A.TW", "00407A.TW", "ACPS09", "ACDD04", "ACPS10"];
+const TRACKED_CODES = ["00981A.TW", "00403A.TW", "00982A.TW", "00992A.TW", "00407A.TW"];
 
 cron.schedule("0 8,18 * * *", async () => {
-  const nowStr = new Date().toLocaleString("zh-TW", { timeZone: "Asia/Taipei" });
-  console.log(`[Cron Task] Executing scheduled fund auto-update at 08:00/18:00 (${nowStr})...`);
-  
-  for (const code of TRACKED_CODES) {
-    try {
-      const isEtf = code.includes(".TW") || code.startsWith("00");
-      const targetUrl = isEtf
-        ? `https://www.moneydj.com/ETF/X/Basic/Basic0007B.xdjhtm?etfid=${code}`
-        : `https://www.moneydj.com/funddj/yp/yp013000.djhtm?a=${code}`;
-      
-      const response = await fetch(targetUrl, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
-          "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7",
-        },
-      });
-
-      if (response.ok) {
-        console.log(`[Cron Task] Successfully updated fund details for ${code}`);
-      }
-    } catch (err: any) {
-      console.error(`[Cron Task Error] Failed auto-updating ${code}:`, err.message);
-    }
-  }
+  await executeAutoScrapeAll();
 }, {
   timezone: "Asia/Taipei"
+});
+
+// API: Batch auto-scrape all 5 primary funds
+app.get("/api/scrape-all", async (req, res) => {
+  try {
+    const scrapedData = await executeAutoScrapeAll();
+    res.json({ success: true, count: scrapedData.length, data: scrapedData });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // API: Check cron schedule status

@@ -19,15 +19,28 @@ export default function App() {
     const loaded = getSavedFunds();
     setFunds(loaded);
 
-    // Auto-read and compare Google Sheets Database on App startup using loaded local funds as primary baseline
+    // 1. Auto-read and compare Google Sheets Database on App startup
     syncAndMergeSheetsDatabase(loaded)
       .then((res) => {
+        let currentFunds = loaded;
         if (res.syncedPeriodsCount > 0 || res.updatedFunds.length > 0) {
-          setFunds(res.updatedFunds);
-          saveFunds(res.updatedFunds);
+          currentFunds = res.updatedFunds;
+          setFunds(currentFunds);
+          saveFunds(currentFunds);
           if (res.syncedPeriodsCount > 0) {
-            showToast(`⚡ 已自動連線並比對 Google 試算表資料庫 (${res.source})，載入 ${res.syncedPeriodsCount} 個新歷史期別！`);
+            showToast(`⚡ 已自動連線並比對 Google 試算表資料庫 (${res.source})，載入 ${res.syncedPeriodsCount} 個歷史期別！`);
           }
+        }
+
+        // 2. Check if today's date snapshot is missing in funds
+        const todayStr = new Date().toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/-/g, '/');
+        const hasTodayData = currentFunds.some((f) =>
+          (f.snapshots || []).some((s) => (s.date || s.asOfDate) === todayStr)
+        );
+
+        if (!hasTodayData) {
+          console.log('[Auto-Check] Today data missing, auto-fetching live fund holdings...');
+          handleRefreshAll();
         }
       })
       .catch((err) => {
