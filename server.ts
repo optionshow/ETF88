@@ -230,10 +230,25 @@ async function fetchEzMoneyFund(urlOrCode: string) {
     if (!stockGroup) return null;
 
     const rawDetails = stockGroup.Details || [];
-    const stockCodes = rawDetails.map((x: any) => x.DetailCode).filter(Boolean);
+    let tsmcIdx = rawDetails.findIndex((item: any) =>
+      (item.DetailCode === "2330") || (item.DetailName && item.DetailName.includes("台積電"))
+    );
+    if (tsmcIdx < 0) tsmcIdx = 0;
+
+    const tsmcRatio = rawDetails[tsmcIdx] && rawDetails[tsmcIdx].NavRate !== undefined ? Number(rawDetails[tsmcIdx].NavRate) : 100;
+
+    const filteredDetails = rawDetails
+      .slice(tsmcIdx)
+      .filter((item: any) => {
+        const ratio = item.NavRate ? Number(item.NavRate) : (nav > 0 ? Number(((item.Amount / nav) * 100).toFixed(2)) : 0);
+        return ratio <= tsmcRatio && ratio >= 1.0;
+      })
+      .slice(0, 20);
+
+    const stockCodes = filteredDetails.map((x: any) => x.DetailCode).filter(Boolean);
     const livePrices = await fetchBatchStockPrices(stockCodes);
 
-    const holdings = rawDetails.map((item: any, idx: number) => {
+    const holdings = filteredDetails.map((item: any, idx: number) => {
       const cleanName = (item.DetailName || "").replace(/\*/g, "").trim();
       const ratio = item.NavRate ? Number(item.NavRate) : (nav > 0 ? Number(((item.Amount / nav) * 100).toFixed(2)) : 0);
       const dateStr = item.TranDate ? item.TranDate.split("T")[0].replace(/-/g, "/") : "2026/08/05";
@@ -253,7 +268,7 @@ async function fetchEzMoneyFund(urlOrCode: string) {
         price,
         marketValue
       };
-    }).sort((a: any, b: any) => b.ratio - a.ratio);
+    });
 
     return {
       fundCode: code4Digit,
@@ -300,11 +315,27 @@ async function fetchCapitalFund(fundIdOrUrl: string = "399") {
     const dateStr = pcf.date2 ? pcf.date2.replace(/-/g, "/") : "2026/08/05";
     const nav = pcf.nav || 0;
 
-    const rawStocks = json.data.stocks.slice(0, 20);
-    const stockCodes = rawStocks.map((x: any) => x.stocNo).filter(Boolean);
+    const rawStocks = json.data.stocks || [];
+    let tsmcIdx = rawStocks.findIndex((item: any) =>
+      (item.stocNo === "2330") || (item.stocName && item.stocName.includes("台積電"))
+    );
+    if (tsmcIdx < 0) tsmcIdx = 0;
+
+    const tsmcItem = rawStocks[tsmcIdx];
+    const tsmcRatio = tsmcItem ? Number(tsmcItem.weightRound || tsmcItem.weight || 100) : 100;
+
+    const filteredStocks = rawStocks
+      .slice(tsmcIdx)
+      .filter((item: any) => {
+        const ratio = Number(item.weightRound || item.weight || 0);
+        return ratio <= tsmcRatio && ratio >= 1.0;
+      })
+      .slice(0, 20);
+
+    const stockCodes = filteredStocks.map((x: any) => x.stocNo).filter(Boolean);
     const livePrices = await fetchBatchStockPrices(stockCodes);
 
-    const holdings = rawStocks.map((item: any, idx: number) => {
+    const holdings = filteredStocks.map((item: any, idx: number) => {
       const cleanName = item.stocName.replace(/\*/g, "").trim();
       const code = item.stocNo;
       const ratio = Number(item.weightRound || item.weight.toFixed(2));
@@ -324,7 +355,7 @@ async function fetchCapitalFund(fundIdOrUrl: string = "399") {
         price,
         marketValue
       };
-    }).sort((a: any, b: any) => b.ratio - a.ratio);
+    });
 
     return {
       fundCode: code4Digit,
@@ -362,7 +393,7 @@ async function fetchKgiFund(fundId: string = "J024") {
       }
     });
 
-    const rawHoldings: any[] = [];
+    const holdingMap = new Map<string, any>();
     $("table").each((_tblIdx, tableEl) => {
       const headers = $(tableEl).find("th").text();
       if (headers.includes("股票代號") || headers.includes("股票名稱") || headers.includes("權重")) {
@@ -377,8 +408,8 @@ async function fetchKgiFund(fundId: string = "J024") {
             const shares = parseInt(sharesStr.replace(/,/g, ""), 10) || 0;
             const ratio = parseFloat(ratioStr) || 0;
 
-            if (code && name && !isNaN(ratio) && ratio > 0) {
-              rawHoldings.push({
+            if (code && /^\d{4}[A-Z]?$/.test(code) && name && !isNaN(ratio) && ratio > 0 && !holdingMap.has(code)) {
+              holdingMap.set(code, {
                 code,
                 name,
                 shares,
@@ -391,11 +422,22 @@ async function fetchKgiFund(fundId: string = "J024") {
       }
     });
 
-    const top20Raw = rawHoldings.slice(0, 20);
-    const stockCodes = top20Raw.map((x) => x.code).filter(Boolean);
+    const rawHoldings = Array.from(holdingMap.values()).sort((a, b) => b.ratio - a.ratio);
+    let tsmcIdx = rawHoldings.findIndex((item) =>
+      (item.code === "2330") || (item.name && item.name.includes("台積電"))
+    );
+    if (tsmcIdx < 0) tsmcIdx = 0;
+
+    const tsmcRatio = rawHoldings[tsmcIdx]?.ratio || 100;
+    const filteredRaw = rawHoldings
+      .slice(tsmcIdx)
+      .filter((item) => item.ratio <= tsmcRatio && item.ratio >= 1.0)
+      .slice(0, 20);
+
+    const stockCodes = filteredRaw.map((x) => x.code).filter(Boolean);
     const livePrices = await fetchBatchStockPrices(stockCodes);
 
-    const holdings = top20Raw.map((item, idx) => {
+    const holdings = filteredRaw.map((item, idx) => {
       const liveP = livePrices[item.code]?.price;
       const fallbackP = 500;
       const price = liveP || fallbackP;
@@ -412,7 +454,7 @@ async function fetchKgiFund(fundId: string = "J024") {
         price,
         marketValue
       };
-    }).sort((a: any, b: any) => b.ratio - a.ratio);
+    });
 
     return {
       fundCode: "00407A.TW",

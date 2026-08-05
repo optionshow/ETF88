@@ -70,7 +70,8 @@ export default function App() {
   const handleRefreshAll = async () => {
     setIsRefreshing(true);
     let updatedCount = 0;
-    const newFundsList = [...funds];
+    const currentSaved = getSavedFunds();
+    const newFundsList = [...currentSaved];
 
     // 1. Execute COMPLETE live auto-scraping for ALL funds according to AGENTS.md protocol
     for (let i = 0; i < newFundsList.length; i++) {
@@ -83,10 +84,11 @@ export default function App() {
     }
 
     // 2. Immediately persist freshly scraped funds to state & localStorage
-    setFunds(newFundsList);
-    saveFunds(newFundsList);
+    const dedupped = getSavedFunds(); // getSavedFunds already deduplicates and saves
+    setFunds(dedupped);
+    saveFunds(dedupped);
 
-    // 3. Bidirectionally merge with Google Sheets passing newFundsList (App data takes priority)
+    // 3. Bidirectionally merge with Google Sheets passing fresh dataset
     try {
       const sheetsSync = await syncAndMergeSheetsDatabase(newFundsList);
       setFunds(sheetsSync.updatedFunds);

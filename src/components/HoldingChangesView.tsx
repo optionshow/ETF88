@@ -60,7 +60,7 @@ export const HoldingChangesView: React.FC<HoldingChangesViewProps> = ({
   // Gather unique available dates across funds or for active fund
   const allDates = Array.from(
     new Set(funds.flatMap((f) => (f.snapshots || []).map((s) => s.date || s.asOfDate)))
-  ).sort((a, b) => new Date(b.replace(/\//g, '-')).getTime() - new Date(a.replace(/\//g, '-')).getTime());
+  ).filter((d): d is string => Boolean(d)).sort((a: string, b: string) => new Date(b.replace(/\//g, '-')).getTime() - new Date(a.replace(/\//g, '-')).getTime());
 
   const currentFund = funds.find((f) => f.id === selectedFundId);
   const currentFundSnapshots = currentFund?.snapshots || [];

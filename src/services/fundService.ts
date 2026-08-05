@@ -66,7 +66,19 @@ function deduplicateSnapshotHoldings(holdings: any[]): any[] {
       map.set(key, item);
     }
   });
-  return Array.from(map.values());
+  const sorted = Array.from(map.values()).sort((a, b) => Number(b.ratio) - Number(a.ratio));
+
+  let tsmcIdx = sorted.findIndex((item) =>
+    (item.stockCode === '2330') || (item.stockName && item.stockName.includes('台積電'))
+  );
+  if (tsmcIdx < 0) tsmcIdx = 0;
+
+  const tsmcRatio = sorted[tsmcIdx]?.ratio || 100;
+
+  return sorted
+    .slice(tsmcIdx)
+    .filter((item) => Number(item.ratio) <= tsmcRatio && Number(item.ratio) >= 1.0)
+    .slice(0, 20);
 }
 
 export const OFFICIAL_FUND_METADATA: Record<string, { code: string; name: string; url: string; manager: string; category: string }> = {
@@ -120,19 +132,20 @@ export function getOfficialMetadata(str: string) {
 
 export function deduplicateFunds(funds: FundData[]): FundData[] {
   const map = new Map<string, FundData>();
+  
   funds.forEach((f) => {
-    const rawKey = (f.code || f.id).toUpperCase().trim();
-    const official = getOfficialMetadata(rawKey);
+    const rawKey = (f.code || f.id || f.name || '').toUpperCase().trim();
+    const official = getOfficialMetadata(rawKey) || getOfficialMetadata(f.id) || getOfficialMetadata(f.name) || getOfficialMetadata(f.url);
     const key = official?.code || rawKey;
 
-    if (!map.has(key)) {
-      const cleanSnapshots = (f.snapshots || []).map((s) => ({
-        ...s,
-        date: normalizeDateString(s.date || s.asOfDate),
-        asOfDate: normalizeDateString(s.asOfDate || s.date),
-        holdings: deduplicateSnapshotHoldings(s.holdings || []),
-      }));
+    const cleanSnapshots = (f.snapshots || []).map((s) => ({
+      ...s,
+      date: normalizeDateString(s.date || s.asOfDate),
+      asOfDate: normalizeDateString(s.asOfDate || s.date),
+      holdings: deduplicateSnapshotHoldings(s.holdings || []),
+    }));
 
+    if (!map.has(key)) {
       map.set(key, {
         ...f,
         id: official?.code || f.id || key,
@@ -143,8 +156,55 @@ export function deduplicateFunds(funds: FundData[]): FundData[] {
         category: official?.category || f.category,
         snapshots: cleanSnapshots,
       });
+    } else {
+      // Merge snapshots into existing fund entry without losing newer/valid data
+      const existingFund = map.get(key)!;
+      const snapMap = new Map<string, any>();
+      (existingFund.snapshots || []).forEach((s) => {
+        const k = normalizeDateString(s.date || s.asOfDate);
+        if (k) snapMap.set(k, s);
+      });
+
+      cleanSnapshots.forEach((s) => {
+        const k = normalizeDateString(s.date || s.asOfDate);
+        if (!k) return;
+        const prev = snapMap.get(k);
+        const prevValid = prev && Array.isArray(prev.holdings) && prev.holdings.some((h: any) => Number(h.shares) > 0 || Number(h.ratio) > 0);
+        const currValid = Array.isArray(s.holdings) && s.holdings.some((h: any) => Number(h.shares) > 0 || Number(h.ratio) > 0);
+
+        if (!prev || (!prevValid && currValid)) {
+          snapMap.set(k, s);
+        }
+      });
+
+      const mergedSnaps = Array.from(snapMap.values()).sort(
+        (a, b) => new Date((b.date || b.asOfDate).replace(/\//g, '-')).getTime() - new Date((a.date || a.asOfDate).replace(/\//g, '-')).getTime()
+      );
+
+      map.set(key, {
+        ...existingFund,
+        id: official?.code || existingFund.id,
+        code: official?.code || existingFund.code,
+        name: official?.name || existingFund.name,
+        url: official?.url || existingFund.url,
+        manager: official?.manager || existingFund.manager,
+        category: official?.category || existingFund.category,
+        asOfDate: mergedSnaps[0]?.asOfDate || existingFund.asOfDate,
+        navDate: mergedSnaps[0]?.asOfDate || existingFund.navDate,
+        snapshots: mergedSnaps,
+      });
     }
   });
+
+  // Ensure all 5 official preset funds exist in the output map
+  INITIAL_FUNDS.forEach((preset) => {
+    const pOfficial = getOfficialMetadata(preset.code);
+    const pKey = pOfficial?.code || preset.code;
+    if (!map.has(pKey)) {
+      map.set(pKey, preset);
+    }
+  });
+
   return Array.from(map.values());
 }
 
@@ -157,14 +217,14 @@ export function getSavedFunds(): FundData[] {
         // Clean out invalid snapshots if present, merge preset updates, and deduplicate
         const sanitized = parsed.map((fund: FundData) => {
           const codeUpper = (fund.code || fund.id || '').toUpperCase().trim();
-          const official = getOfficialMetadata(codeUpper);
+          const official = getOfficialMetadata(codeUpper) || getOfficialMetadata(fund.id) || getOfficialMetadata(fund.name);
           const presetMatch = INITIAL_FUNDS.find((p) => p.code.toUpperCase().trim() === codeUpper || p.code === official?.code);
 
           let snapshots = (fund.snapshots || []).filter(
             (snap) => !snap.date?.includes('05/31') && !snap.asOfDate?.includes('05/31') && !snap.date?.includes('5/31') && !snap.asOfDate?.includes('5/31')
           );
 
-          // If preset fund exists (e.g. 00407A.TW, 00981A.TW, 00982A.TW), ensure fresh preset snapshots overwrite stale dummy holdings
+          // If preset fund exists, ensure fresh preset snapshots overwrite stale dummy holdings
           if (presetMatch && presetMatch.snapshots && presetMatch.snapshots.length > 0) {
             const snapMap = new Map<string, any>();
             snapshots.forEach((s) => {
@@ -201,8 +261,8 @@ export function getSavedFunds(): FundData[] {
             manager: official?.manager || fund.manager,
             category: official?.category || fund.category,
             currentNav: presetMatch?.currentNav || fund.currentNav || 8.80,
-            navDate: snapshots[0]?.asOfDate || snapshots[0]?.date || fund.navDate || '2026/08/03',
-            asOfDate: snapshots[0]?.asOfDate || snapshots[0]?.date || fund.asOfDate || '2026/08/03',
+            navDate: snapshots[0]?.asOfDate || snapshots[0]?.date || fund.navDate || '2026/08/05',
+            asOfDate: snapshots[0]?.asOfDate || snapshots[0]?.date || fund.asOfDate || '2026/08/05',
             snapshots,
           };
         });
@@ -652,10 +712,14 @@ export async function syncAndMergeSheetsDatabase(
 
       // 1. Merge Sheets data into existing local funds
       const updatedFundsList = targetFunds.map((fund) => {
+        const official = getOfficialMetadata(fund.code) || getOfficialMetadata(fund.id) || getOfficialMetadata(fund.name);
         const cleanFundCode = fund.code.replace('.TW', '').toUpperCase();
-        const sheetData = rawSheetData!.find(
-          (item: any) => (item.code || '').toUpperCase() === cleanFundCode
-        );
+
+        const sheetData = rawSheetData!.find((item: any) => {
+          const itemMeta = getOfficialMetadata(item.code) || getOfficialMetadata(item.sheetName);
+          if (official && itemMeta) return official.code === itemMeta.code;
+          return (item.code || '').toUpperCase().trim() === cleanFundCode;
+        });
 
         const existingSnapshots = fund.snapshots || [];
         const existingDateMap = new Map(
@@ -703,6 +767,12 @@ export async function syncAndMergeSheetsDatabase(
 
         return {
           ...fund,
+          id: official?.code || fund.id,
+          code: official?.code || fund.code,
+          name: official?.name || fund.name,
+          url: official?.url || fund.url,
+          manager: official?.manager || fund.manager,
+          category: official?.category || fund.category,
           asOfDate: normalizeDateString(latestDate),
           snapshots: mergedSnapshots,
           lastUpdated: new Date().toLocaleString('zh-TW'),
@@ -712,10 +782,15 @@ export async function syncAndMergeSheetsDatabase(
       // 2. Add any funds from Google Sheets that were missing locally
       rawSheetData.forEach((sheetItem: any) => {
         const sheetCode = (sheetItem.code || '').toUpperCase().trim();
-        if (!sheetCode) return;
-        const exists = updatedFundsList.some(
-          (f) => f.code.replace('.TW', '').toUpperCase() === sheetCode
-        );
+        const sheetMeta = getOfficialMetadata(sheetCode) || getOfficialMetadata(sheetItem.sheetName);
+        if (!sheetCode && !sheetMeta) return;
+
+        const exists = updatedFundsList.some((f) => {
+          const fMeta = getOfficialMetadata(f.code) || getOfficialMetadata(f.id) || getOfficialMetadata(f.name);
+          if (sheetMeta && fMeta) return sheetMeta.code === fMeta.code;
+          return f.code.replace('.TW', '').toUpperCase() === sheetCode;
+        });
+
         if (!exists && Array.isArray(sheetItem.snapshots) && sheetItem.snapshots.length > 0) {
           const newSnapshots = sheetItem.snapshots.map((s: any) => ({
             ...s,
@@ -725,18 +800,19 @@ export async function syncAndMergeSheetsDatabase(
             (a: any, b: any) => new Date(b.date.replace(/\//g, '-')).getTime() - new Date(a.date.replace(/\//g, '-')).getTime()
           );
 
+          const codeToUse = sheetMeta?.code || (sheetCode.includes('.') ? sheetCode : `${sheetCode}.TW`);
           updatedFundsList.push({
-            id: `fund_${sheetCode}`,
-            code: sheetCode.includes('.') ? sheetCode : `${sheetCode}.TW`,
-            name: sheetItem.sheetName ? sheetItem.sheetName.replace('基金明細_', '') : `基金 ${sheetCode}`,
-            manager: '公開資訊',
-            category: '股票型',
-            url: `https://www.google.com/search?q=${sheetCode}`,
+            id: codeToUse,
+            code: codeToUse,
+            name: sheetMeta?.name || (sheetItem.sheetName ? sheetItem.sheetName.replace('基金明細_', '') : `基金 ${sheetCode}`),
+            manager: sheetMeta?.manager || '公開資訊',
+            category: sheetMeta?.category || '股票型',
+            url: sheetMeta?.url || `https://www.google.com/search?q=${sheetCode}`,
             currentNav: 0,
-            navDate: newSnapshots[0]?.asOfDate || '2026/08/04',
+            navDate: newSnapshots[0]?.asOfDate || '2026/08/05',
             oneYearReturn: 0,
             threeYearReturn: 0,
-            asOfDate: newSnapshots[0]?.asOfDate || '2026/08/04',
+            asOfDate: newSnapshots[0]?.asOfDate || '2026/08/05',
             snapshots: newSnapshots,
             lastUpdated: new Date().toLocaleString('zh-TW'),
           });
