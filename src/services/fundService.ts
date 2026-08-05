@@ -69,10 +69,62 @@ function deduplicateSnapshotHoldings(holdings: any[]): any[] {
   return Array.from(map.values());
 }
 
+export const OFFICIAL_FUND_METADATA: Record<string, { code: string; name: string; url: string; manager: string; category: string }> = {
+  '00981A.TW': {
+    code: '00981A.TW',
+    name: '統一台股增長',
+    url: 'https://www.ezmoney.com.tw/ETF/Fund/Info?fundCode=49YTW',
+    manager: '統一投信',
+    category: '台灣股票型 ETF / 主動動能型',
+  },
+  '00403A.TW': {
+    code: '00403A.TW',
+    name: '統一升級50',
+    url: 'https://www.ezmoney.com.tw/ETF/Fund/Info?fundCode=63YTW',
+    manager: '統一投信',
+    category: '台灣股票型 ETF / 主動型',
+  },
+  '00982A.TW': {
+    code: '00982A.TW',
+    name: '群益台灣強棒',
+    url: 'https://www.capitalfund.com.tw/etf/product/detail/399/portfolio',
+    manager: '群益投信',
+    category: '台灣股票型 ETF / 主動型',
+  },
+  '00992A.TW': {
+    code: '00992A.TW',
+    name: '群益科技創新',
+    url: 'https://www.capitalfund.com.tw/etf/product/detail/500/portfolio',
+    manager: '群益投信',
+    category: '台灣科技型 ETF / 主動型',
+  },
+  '00407A.TW': {
+    code: '00407A.TW',
+    name: '凱基台灣精選強棒',
+    url: 'https://www.kgifund.com.tw/Fund/Detail?fundID=J024',
+    manager: '凱基投信',
+    category: '台灣股票型 ETF / 主動精選型',
+  },
+};
+
+export function getOfficialMetadata(str: string) {
+  if (!str) return null;
+  const s = str.toUpperCase().trim();
+  if (s.includes('00981A') || s.includes('49YTW')) return OFFICIAL_FUND_METADATA['00981A.TW'];
+  if (s.includes('00403A') || s.includes('63YTW')) return OFFICIAL_FUND_METADATA['00403A.TW'];
+  if (s.includes('00982A') || s.includes('399')) return OFFICIAL_FUND_METADATA['00982A.TW'];
+  if (s.includes('00992A') || s.includes('500')) return OFFICIAL_FUND_METADATA['00992A.TW'];
+  if (s.includes('00407A') || s.includes('J024')) return OFFICIAL_FUND_METADATA['00407A.TW'];
+  return null;
+}
+
 export function deduplicateFunds(funds: FundData[]): FundData[] {
   const map = new Map<string, FundData>();
   funds.forEach((f) => {
-    const key = (f.code || f.id).toUpperCase().trim();
+    const rawKey = (f.code || f.id).toUpperCase().trim();
+    const official = getOfficialMetadata(rawKey);
+    const key = official?.code || rawKey;
+
     if (!map.has(key)) {
       const cleanSnapshots = (f.snapshots || []).map((s) => ({
         ...s,
@@ -83,7 +135,12 @@ export function deduplicateFunds(funds: FundData[]): FundData[] {
 
       map.set(key, {
         ...f,
-        name: cleanFundName(f.name, f.code),
+        id: official?.code || f.id || key,
+        code: official?.code || f.code || key,
+        name: official?.name || cleanFundName(f.name, f.code),
+        url: official?.url || f.url || '',
+        manager: official?.manager || f.manager,
+        category: official?.category || f.category,
         snapshots: cleanSnapshots,
       });
     }
@@ -100,7 +157,8 @@ export function getSavedFunds(): FundData[] {
         // Clean out invalid snapshots if present, merge preset updates, and deduplicate
         const sanitized = parsed.map((fund: FundData) => {
           const codeUpper = (fund.code || fund.id || '').toUpperCase().trim();
-          const presetMatch = INITIAL_FUNDS.find((p) => p.code.toUpperCase().trim() === codeUpper);
+          const official = getOfficialMetadata(codeUpper);
+          const presetMatch = INITIAL_FUNDS.find((p) => p.code.toUpperCase().trim() === codeUpper || p.code === official?.code);
 
           let snapshots = (fund.snapshots || []).filter(
             (snap) => !snap.date?.includes('05/31') && !snap.asOfDate?.includes('05/31') && !snap.date?.includes('5/31') && !snap.asOfDate?.includes('5/31')
@@ -136,6 +194,12 @@ export function getSavedFunds(): FundData[] {
 
           return {
             ...fund,
+            id: official?.code || fund.id,
+            code: official?.code || fund.code,
+            name: official?.name || cleanFundName(fund.name, fund.code),
+            url: official?.url || fund.url || '',
+            manager: official?.manager || fund.manager,
+            category: official?.category || fund.category,
             currentNav: presetMatch?.currentNav || fund.currentNav || 8.80,
             navDate: snapshots[0]?.asOfDate || snapshots[0]?.date || fund.navDate || '2026/08/03',
             asOfDate: snapshots[0]?.asOfDate || snapshots[0]?.date || fund.asOfDate || '2026/08/03',
@@ -181,7 +245,8 @@ export async function fetchLiveFundData(fundCodeOrUrl: string): Promise<FundData
     const result = await res.json();
     if (result.success && result.data) {
       const scraped = result.data;
-      const existing = getSavedFunds().find((f) => f.code.toUpperCase().trim() === scraped.fundCode.toUpperCase().trim() || f.id.toUpperCase().trim() === scraped.fundCode.toUpperCase().trim());
+      const officialMeta = getOfficialMetadata(scraped.fundCode || fundCodeOrUrl);
+      const existing = getSavedFunds().find((f) => f.code.toUpperCase().trim() === (officialMeta?.code || scraped.fundCode).toUpperCase().trim() || f.id.toUpperCase().trim() === (officialMeta?.code || scraped.fundCode).toUpperCase().trim());
 
       const normDate = normalizeDateString(scraped.asOfDate || new Date().toISOString().slice(0, 10).replace(/-/g, '/'));
 
@@ -216,12 +281,12 @@ export async function fetchLiveFundData(fundCodeOrUrl: string): Promise<FundData
       const latestDate = updatedSnapshots[0]?.asOfDate || normDate;
 
       const updatedFund: FundData = {
-        id: scraped.fundCode,
-        code: scraped.fundCode,
-        name: scraped.fundName || existing?.name || `基金 ${scraped.fundCode}`,
-        manager: existing?.manager || '台灣公開募集基金',
-        category: existing?.category || '台灣股票型基金',
-        url: scraped.url || existing?.url || '',
+        id: officialMeta?.code || scraped.fundCode,
+        code: officialMeta?.code || scraped.fundCode,
+        name: officialMeta?.name || scraped.fundName || existing?.name || `基金 ${scraped.fundCode}`,
+        manager: officialMeta?.manager || existing?.manager || '台灣公開募集基金',
+        category: officialMeta?.category || existing?.category || '台灣股票型基金',
+        url: officialMeta?.url || scraped.url || existing?.url || '',
         currentNav: scraped.currentNav || existing?.currentNav || 8.80,
         navDate: latestDate,
         oneYearReturn: existing?.oneYearReturn || 35.0,
@@ -239,7 +304,9 @@ export async function fetchLiveFundData(fundCodeOrUrl: string): Promise<FundData
 
   // Fallback if network or live scraping fails
   const code = fundCodeOrUrl.toUpperCase().trim();
-  const found = getSavedFunds().find((f) => f.code.toUpperCase().trim() === code || f.id.toUpperCase().trim() === code);
+  const officialMeta = getOfficialMetadata(code);
+  const searchKey = officialMeta?.code || code;
+  const found = getSavedFunds().find((f) => f.code.toUpperCase().trim() === searchKey || f.id.toUpperCase().trim() === searchKey);
   return found || null;
 }
 

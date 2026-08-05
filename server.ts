@@ -198,7 +198,7 @@ async function fetchBatchStockPrices(stockCodes: string[]): Promise<Record<strin
 // Helper function for ezmoney crawler
 async function fetchEzMoneyFund(urlOrCode: string) {
   try {
-    let ezUrl = urlOrCode;
+    let ezUrl = "https://www.ezmoney.com.tw/ETF/Fund/Info?fundCode=49YTW";
     let code4Digit = "00981A.TW";
     let ezName = "統一台股增長";
 
@@ -210,13 +210,12 @@ async function fetchEzMoneyFund(urlOrCode: string) {
       ezUrl = "https://www.ezmoney.com.tw/ETF/Fund/Info?fundCode=49YTW";
       code4Digit = "00981A.TW";
       ezName = "統一台股增長";
-    } else if (!ezUrl.startsWith("http")) {
-      ezUrl = `https://www.ezmoney.com.tw/ETF/Fund/Info?fundCode=${urlOrCode}`;
-    }
-
-    if (ezUrl.includes("63YTW") || ezUrl.includes("00403A")) {
-      code4Digit = "00403A.TW";
-      ezName = "統一升級50";
+    } else if (urlOrCode.startsWith("http")) {
+      ezUrl = urlOrCode;
+      if (ezUrl.includes("63YTW") || ezUrl.includes("00403A")) {
+        code4Digit = "00403A.TW";
+        ezName = "統一升級50";
+      }
     }
 
     const html = execSync(`curl -sL -b /tmp/cookies.txt -c /tmp/cookies.txt -k "${ezUrl}" -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)"`, { encoding: "utf-8", timeout: 10000 });
@@ -235,8 +234,9 @@ async function fetchEzMoneyFund(urlOrCode: string) {
     const livePrices = await fetchBatchStockPrices(stockCodes);
 
     const holdings = rawDetails.map((item: any, idx: number) => {
-      const ratio = nav > 0 ? Number(((item.Amount / nav) * 100).toFixed(2)) : 0;
-      const dateStr = item.TranDate ? item.TranDate.split("T")[0].replace(/-/g, "/") : "2026/08/03";
+      const cleanName = (item.DetailName || "").replace(/\*/g, "").trim();
+      const ratio = item.NavRate ? Number(item.NavRate) : (nav > 0 ? Number(((item.Amount / nav) * 100).toFixed(2)) : 0);
+      const dateStr = item.TranDate ? item.TranDate.split("T")[0].replace(/-/g, "/") : "2026/08/05";
       const code = item.DetailCode;
       const liveP = livePrices[code]?.price;
       const price = liveP || (item.Share > 0 ? Math.round(item.Amount / item.Share) : 0);
@@ -244,7 +244,7 @@ async function fetchEzMoneyFund(urlOrCode: string) {
 
       return {
         id: `ez_${idx + 1}`,
-        stockName: `${item.DetailName} (${code})`,
+        stockName: `${cleanName} (${code})`,
         stockCode: code,
         shares: item.Share,
         sharesFormatted: item.Share.toLocaleString(),
@@ -253,12 +253,13 @@ async function fetchEzMoneyFund(urlOrCode: string) {
         price,
         marketValue
       };
-    });
+    }).sort((a: any, b: any) => b.ratio - a.ratio);
 
     return {
       fundCode: code4Digit,
       fundName: ezName,
-      asOfDate: holdings[0] ? holdings[0].date : "2026/08/03",
+      url: ezUrl,
+      asOfDate: holdings[0] ? holdings[0].date : "2026/08/05",
       totalAssetsMillion: Math.round(nav / 1000000),
       holdings
     };
@@ -273,16 +274,19 @@ async function fetchCapitalFund(fundIdOrUrl: string = "399") {
   try {
     let fundId = "399";
     let code4Digit = "00982A.TW";
-    let cpName = "群益精選強棒";
+    let cpName = "群益台灣強棒";
+    let cpUrl = "https://www.capitalfund.com.tw/etf/product/detail/399/portfolio";
 
     if (fundIdOrUrl.includes("500") || fundIdOrUrl.includes("00992A")) {
       fundId = "500";
       code4Digit = "00992A.TW";
       cpName = "群益科技創新";
+      cpUrl = "https://www.capitalfund.com.tw/etf/product/detail/500/portfolio";
     } else if (fundIdOrUrl.includes("399") || fundIdOrUrl.includes("00982A")) {
       fundId = "399";
       code4Digit = "00982A.TW";
-      cpName = "群益精選強棒";
+      cpName = "群益台灣強棒";
+      cpUrl = "https://www.capitalfund.com.tw/etf/product/detail/399/portfolio";
     }
 
     const res = execSync(
@@ -293,7 +297,7 @@ async function fetchCapitalFund(fundIdOrUrl: string = "399") {
     if (!json || !json.data || !json.data.stocks) return null;
 
     const pcf = json.data.pcf || {};
-    const dateStr = pcf.date2 ? pcf.date2.replace(/-/g, "/") : "2026/08/03";
+    const dateStr = pcf.date2 ? pcf.date2.replace(/-/g, "/") : "2026/08/05";
     const nav = pcf.nav || 0;
 
     const rawStocks = json.data.stocks.slice(0, 20);
@@ -320,11 +324,12 @@ async function fetchCapitalFund(fundIdOrUrl: string = "399") {
         price,
         marketValue
       };
-    });
+    }).sort((a: any, b: any) => b.ratio - a.ratio);
 
     return {
       fundCode: code4Digit,
       fundName: cpName,
+      url: cpUrl,
       asOfDate: dateStr,
       totalAssetsMillion: Math.round(nav / 1000000),
       holdings
@@ -338,14 +343,15 @@ async function fetchCapitalFund(fundIdOrUrl: string = "399") {
 // Helper function for KGI Fund (凱基投信 00407A / J024) crawler
 async function fetchKgiFund(fundId: string = "J024") {
   try {
+    const kgiUrl = "https://www.kgifund.com.tw/Fund/Detail?fundID=J024";
     const html = execSync(
-      `curl -sL -k "https://www.kgifund.com.tw/Fund/Detail?fundID=${fundId}" -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)"`,
+      `curl -sL -k "${kgiUrl}" -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)"`,
       { encoding: "utf-8", timeout: 10000 }
     );
     const $ = cheerio.load(html);
 
     const navDateInput = $("#LatestNAVDate").val();
-    const dateStr = typeof navDateInput === "string" && navDateInput.trim() ? navDateInput.trim() : "2026/08/03";
+    const dateStr = typeof navDateInput === "string" && navDateInput.trim() ? navDateInput.trim() : "2026/08/05";
 
     let currentNav = 0;
     $(".FundNavDiv, .nav-price, .Price").each((_i, el) => {
@@ -406,11 +412,12 @@ async function fetchKgiFund(fundId: string = "J024") {
         price,
         marketValue
       };
-    });
+    }).sort((a: any, b: any) => b.ratio - a.ratio);
 
     return {
       fundCode: "00407A.TW",
-      fundName: "主動凱基台灣",
+      fundName: "凱基台灣精選強棒",
+      url: kgiUrl,
       asOfDate: dateStr,
       currentNav: currentNav || 8.80,
       holdings
