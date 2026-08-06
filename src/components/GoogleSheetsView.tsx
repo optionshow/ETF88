@@ -225,58 +225,7 @@ export const GoogleSheetsView: React.FC<GoogleSheetsViewProps> = ({ funds, onUpd
         </div>
       </div>
 
-      {/* Deduplication & Active Cleaning Control Banner */}
-      <div className="bg-amber-50 border border-amber-200 rounded-lg p-5 shadow-sm space-y-3">
-        <div className="flex items-start justify-between flex-wrap gap-3">
-          <div className="flex items-start space-x-3">
-            <div className="w-10 h-10 rounded-lg bg-amber-600 text-white flex items-center justify-center flex-shrink-0 mt-0.5">
-              <Trash2 className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="flex items-center space-x-2 flex-wrap gap-y-1">
-                <h4 className="text-sm font-bold text-amber-950">
-                  🧹 Google 試算表歷史期別與列數嚴格限制與清理 (Row Limit & De-duplication)
-                </h4>
-                <span className="px-2 py-0.5 bg-amber-200 text-amber-900 font-extrabold text-[10px] rounded-full">
-                  1天 ≤ 21列 (20檔+標題) / 2天 ≤ 41列 (40檔+標題)
-                </span>
-              </div>
-              <p className="text-xs text-amber-900 leading-relaxed mt-1">
-                <span className="font-bold">問：為何按了清理或重新整理頁面又多新增了 20 列（累積到 260 列）？</span>
-                <br />
-                答：因為您的 Google 試算表後台（Apps Script Web App）目前的 Web App 網址仍在使用<b>【舊版的 程式碼.gs 部署】</b>，因此每次發送請求時舊腳本依然會向末端 Append 附加舊資料。
-                <br /><br />
-                <span className="font-bold underline">⚡ 100% 裁切清理 2 步驟（執行後 260 列會立即被刪除並縮減回 21 列）：</span>
-                <br />
-                1️⃣ 點選右側<b>【📋 複製最新 Apps Script 腳本】</b>，貼回 Google 試算表的 <code className="bg-amber-100 px-1 rounded text-amber-900 font-mono">擴充功能 -&gt; Apps Script -&gt; 程式碼.gs</code> 蓋掉全部。
-                <br />
-                2️⃣ <b>關鍵步驟：</b>點選 Apps Script 右上角 <span className="font-bold bg-amber-200 px-1 rounded text-amber-950">【部署】 -&gt; 【管理部署作業】 -&gt; 點選 pencil 筆圖案【編輯】 -&gt; 版本選擇【新版本 (New version)】 -&gt; 點選【部署】</span>。
-                <br />
-                3️⃣ 重新部署完畢後，再次點選下方 <b>⚡ 1-Click 清理</b>，試算表內的 260 列重複舊資料將會在 1 秒內被<b>完全刪除裁切並自動縮減至精確的 21 列（20檔持股 + 1列標題）</b>！
-              </p>
-            </div>
-          </div>
 
-          <div className="flex flex-col sm:flex-row gap-2 flex-shrink-0 w-full sm:w-auto">
-            <button
-              onClick={handleCopyScript}
-              className="inline-flex items-center justify-center space-x-2 px-3 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-md transition-all shadow-sm cursor-pointer"
-            >
-              {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-              <span>{copied ? '已複製最新腳本！' : '📋 複製 100% 裁切去重版 程式碼.gs'}</span>
-            </button>
-
-            <button
-              onClick={handleAppDrivenExport}
-              disabled={isPushing}
-              className="inline-flex items-center justify-center space-x-2 px-4 py-2 bg-amber-700 hover:bg-amber-800 disabled:bg-slate-300 text-white text-xs font-extrabold rounded-md transition-all shadow-sm cursor-pointer"
-            >
-              {isPushing ? <RefreshCw className="w-4 h-4 animate-spin text-white" /> : <Trash2 className="w-4 h-4" />}
-              <span>{isPushing ? '正在清理並去重中...' : '⚡ 1-Click: 立即主動清理試算表重複紀錄'}</span>
-            </button>
-          </div>
-        </div>
-      </div>
 
       {/* Feature Badges */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
