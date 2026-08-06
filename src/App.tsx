@@ -139,21 +139,34 @@ export default function App() {
       }
     }
 
-    // 2. Immediately persist freshly scraped funds to state & localStorage
-    const dedupped = getSavedFunds(); // getSavedFunds already deduplicates and saves
-    setFunds(dedupped);
-    saveFunds(dedupped);
-
-    // 3. Bidirectionally merge with Google Sheets passing fresh dataset
+    // 2. Synchronously fetch and apply latest live stock prices for all holdings
+    let listWithPrices = newFundsList;
     try {
-      const sheetsSync = await syncAndMergeSheetsDatabase(newFundsList);
-      setFunds(sheetsSync.updatedFunds);
-      saveFunds(sheetsSync.updatedFunds);
+      listWithPrices = await fetchAndUpdateLiveStockPrices(newFundsList);
+    } catch (err) {
+      console.warn('Auto stock price update failed during refreshAll:', err);
+    }
 
-      // 4. Actively push APP's exact scraped data to overwrite Google Sheets database
-      pushAppDataToSheets(sheetsSync.updatedFunds).catch((e) => console.warn('Push app data to sheets warning:', e));
+    // 3. Immediately persist freshly scraped funds and stock prices
+    setFunds(listWithPrices);
+    saveFunds(listWithPrices);
 
-      showToast(`✅ 每日更新完成！成功自動抓取 ${updatedCount} 檔基金最新持股明細（投資股數與比例%），並已同步覆蓋至 Google 試算表資料庫！`);
+    // 4. Bidirectionally merge with Google Sheets passing fresh dataset
+    try {
+      const sheetsSync = await syncAndMergeSheetsDatabase(listWithPrices);
+      let finalSynced = sheetsSync.updatedFunds;
+      try {
+        finalSynced = await fetchAndUpdateLiveStockPrices(finalSynced);
+      } catch (e) {
+        console.warn('Post-sheets sync stock price update failed:', e);
+      }
+      setFunds(finalSynced);
+      saveFunds(finalSynced);
+
+      // 5. Actively push APP's exact scraped data to overwrite Google Sheets database
+      pushAppDataToSheets(finalSynced).catch((e) => console.warn('Push app data to sheets warning:', e));
+
+      showToast(`✅ 每日更新完成！成功自動抓取 ${updatedCount} 檔基金最新持股明細與最新個股股價，並已同步覆蓋至 Google 試算表資料庫！`);
     } catch (e: any) {
       showToast(`每日更新完成 (${updatedCount} 檔)，試算表同步提示: ${e.message}`);
     } finally {
@@ -179,11 +192,16 @@ export default function App() {
     setIsRefreshing(true);
     const res = await fetchLiveFundData(fundCode);
     if (res) {
-      const updated = funds.map((f) => (f.code.toUpperCase() === fundCode.toUpperCase() ? res : f));
+      let updated = funds.map((f) => (f.code.toUpperCase() === fundCode.toUpperCase() ? res : f));
+      try {
+        updated = await fetchAndUpdateLiveStockPrices(updated);
+      } catch (e) {
+        console.warn('Single refresh stock price update error:', e);
+      }
       setFunds(updated);
       saveFunds(updated);
       pushAppDataToSheets(updated).catch((e) => console.warn('Push single fund to sheets error:', e));
-      showToast(`已完成 ${res.name} 的資料擷取與同步！`);
+      showToast(`已完成 ${res.name} 的持股明細與最新股價更新！`);
     } else {
       showToast(`擷取 ${fundCode} 失敗，請確認網路與網址。`, 'error');
     }
@@ -193,7 +211,6 @@ export default function App() {
   const handleAddFund = async (codeOrUrl: string): Promise<boolean> => {
     setIsRefreshing(true);
     const scraped = await fetchLiveFundData(codeOrUrl);
-    setIsRefreshing(false);
 
     if (scraped) {
       const existingIdx = funds.findIndex((f) => f.code.toUpperCase() === scraped.code.toUpperCase());
@@ -205,12 +222,20 @@ export default function App() {
         updatedFunds = [scraped, ...funds];
       }
 
+      try {
+        updatedFunds = await fetchAndUpdateLiveStockPrices(updatedFunds);
+      } catch (e) {
+        console.warn('Stock price update error on add:', e);
+      }
+
       setFunds(updatedFunds);
       saveFunds(updatedFunds);
       setSelectedFundId(scraped.id);
-      showToast(`成功新增/更新基金：${scraped.name} (${scraped.code.replace('.TW', '')})`);
+      setIsRefreshing(false);
+      showToast(`成功新增/更新基金：${scraped.name} (${scraped.code.replace('.TW', '')})，並已同步抓取個股最新股價！`);
       return true;
     }
+    setIsRefreshing(false);
     return false;
   };
 
@@ -289,7 +314,7 @@ export default function App() {
       <footer className="border-t border-slate-200 bg-white py-4 text-center text-slate-500 text-xs mt-auto">
         <div className="max-w-7xl mx-auto px-4 flex flex-wrap items-center justify-between gap-2">
           <span>台灣基金/ETF 持股分析儀 — 專用擷取 4 大欄位（日期、個股名稱、投資股數、比例%）</span>
-          <span>資料來源: 投信官方揭露數據 / 公開資訊 (每日 08:00、16:00 與 18:00 自動執行)</span>
+          <span>資料來源: 投信官方揭露數據 / 公開資訊 (每日 08:00、16:00 與 18:00 自動同步擷取持股與最新個股股價)</span>
         </div>
       </footer>
     </div>

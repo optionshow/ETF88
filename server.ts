@@ -34,10 +34,10 @@ export function normalizeDateString(str: string): string {
   return clean;
 }
 
-// Helper function to execute complete live fund scraping across all 5 funds
+// Helper function to execute complete live fund scraping & stock price auto-update across all 5 funds
 async function executeAutoScrapeAll() {
   const nowStr = new Date().toLocaleString("zh-TW", { timeZone: "Asia/Taipei" });
-  console.log(`[Scraper Engine] Executing scheduled live fund scraping at ${nowStr}...`);
+  console.log(`[Scraper Engine] Executing scheduled live fund scraping & stock price update at ${nowStr}...`);
   const results: any[] = [];
   
   try {
@@ -75,7 +75,38 @@ async function executeAutoScrapeAll() {
     console.error("[Scraper Engine] 00407A scrape error:", e);
   }
 
-  console.log(`[Scraper Engine] Completed auto-scraping ${results.length} funds.`);
+  // Global batch stock price update for all holdings across all scraped funds
+  const allCodesSet = new Set<string>();
+  results.forEach(f => {
+    (f.holdings || []).forEach((h: any) => {
+      if (h.stockCode) allCodesSet.add(h.stockCode);
+      else if (h.stockName) {
+        const m = h.stockName.match(/(\d{4})/);
+        if (m) allCodesSet.add(m[1]);
+      }
+    });
+  });
+
+  if (allCodesSet.size > 0) {
+    try {
+      const globalPrices = await fetchBatchStockPrices(Array.from(allCodesSet));
+      results.forEach(f => {
+        (f.holdings || []).forEach((h: any) => {
+          const code = h.stockCode || (h.stockName ? (h.stockName.match(/(\d{4})/) || [])[1] : undefined);
+          if (code && globalPrices[code]?.price) {
+            h.price = globalPrices[code].price;
+            if (h.shares) {
+              h.marketValue = Math.round(h.price * h.shares);
+            }
+          }
+        });
+      });
+    } catch (e) {
+      console.warn("[Scraper Engine] Global stock price update error:", e);
+    }
+  }
+
+  console.log(`[Scraper Engine] Completed auto-scraping & live stock price update for ${results.length} funds.`);
   return results;
 }
 

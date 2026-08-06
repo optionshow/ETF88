@@ -48,7 +48,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </span>
               </div>
               <p className="text-xs text-slate-500">
-                每日自動擷取基金與 ETF 投資明細（08:00、16:00 &amp; 18:00 自動執行）
+                每日自動擷取基金持股明細並同步抓取最新個股股價（08:00、16:00 &amp; 18:00 自動執行）
               </p>
             </div>
           </div>
