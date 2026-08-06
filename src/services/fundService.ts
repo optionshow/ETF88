@@ -302,7 +302,14 @@ export async function fetchLiveFundData(fundCodeOrUrl: string): Promise<FundData
       body: JSON.stringify({ fundCode: fundCodeOrUrl, fundUrl: fundCodeOrUrl }),
     });
 
-    const result = await res.json();
+    const resText = await res.text();
+    let result: any = {};
+    try {
+      result = JSON.parse(resText);
+    } catch {
+      result = {};
+    }
+
     if (result.success && result.data) {
       const scraped = result.data;
       const officialMeta = getOfficialMetadata(scraped.fundCode || fundCodeOrUrl);
@@ -542,7 +549,13 @@ export async function fetchAndUpdateLiveStockPrices(funds: FundData[]): Promise<
       body: JSON.stringify({ stockCodes: codes }),
     });
 
-    const data = await res.json();
+    const text = await res.text();
+    let data: any = {};
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = {};
+    }
     if (data.success && data.priceMap) {
       const priceMap: Record<string, { price: number }> = data.priceMap;
 
@@ -710,7 +723,13 @@ export async function syncAndMergeSheetsDatabase(
     });
 
     if (res.ok) {
-      const result = await res.json();
+      const resText = await res.text();
+      let result: any = {};
+      try {
+        result = JSON.parse(resText);
+      } catch {
+        result = {};
+      }
       if (result.success && Array.isArray(result.data)) {
         rawSheetData = result.data;
         if (result.source) dataSource = result.source;
@@ -725,7 +744,13 @@ export async function syncAndMergeSheetsDatabase(
     try {
       const directRes = await fetch(defaultWebAppUrl);
       if (directRes.ok) {
-        const json = await directRes.json();
+        const text = await directRes.text();
+        let json: any = null;
+        try {
+          json = JSON.parse(text);
+        } catch {
+          json = null;
+        }
         if (json && (json.status === 'success' || Array.isArray(json.data)) && Array.isArray(json.data || json)) {
           rawSheetData = json.data || json;
           dataSource = 'Google Apps Script 雲端資料庫';

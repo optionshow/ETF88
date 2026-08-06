@@ -8,16 +8,14 @@ interface GoogleSheetsViewProps {
   onUpdateFunds?: (funds: FundData[]) => void;
 }
 
+const DEFAULT_SPREADSHEET_ID = '1u4F6xNbGf2HqkwJL2kXxolEKUObzHWnMdHaGsbI5ypo';
+const DEFAULT_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyAPZfZYLT1Igoo1BRAc6GDdvUcWYTV9HubJVQOGjK1NHqNsjSCpnR0kH4VCgM_6xMm/exec';
+
 export const GoogleSheetsView: React.FC<GoogleSheetsViewProps> = ({ funds, onUpdateFunds }) => {
   const [copied, setCopied] = useState(false);
   const [scriptCode, setScriptCode] = useState<string>('');
-  const [spreadsheetId, setSpreadsheetId] = useState<string>(() => {
-    return (typeof window !== 'undefined' && localStorage.getItem('tw_fund_spreadsheet_id')) || '1u4F6xNbGf2HqkwJL2kXxolEKUObzHWnMdHaGsbI5ypo';
-  });
-  const [webAppUrl, setWebAppUrl] = useState<string>(() => {
-    return (typeof window !== 'undefined' && localStorage.getItem('tw_fund_web_app_url')) || 'https://script.google.com/macros/s/AKfycbyAPZfZYLT1Igoo1BRAc6GDdvUcWYTV9HubJVQOGjK1NHqNsjSCpnR0kH4VCgM_6xMm/exec';
-  });
-  const [saveStatusMsg, setSaveStatusMsg] = useState<string>('');
+  const [spreadsheetId] = useState<string>(DEFAULT_SPREADSHEET_ID);
+  const [webAppUrl] = useState<string>(DEFAULT_WEB_APP_URL);
   const [isTesting, setIsTesting] = useState<boolean>(false);
   const [testStatusMsg, setTestStatusMsg] = useState<string>('');
   const [isReadingDb, setIsReadingDb] = useState<boolean>(false);
@@ -35,25 +33,21 @@ export const GoogleSheetsView: React.FC<GoogleSheetsViewProps> = ({ funds, onUpd
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ fundCodes: selectedFundCodes, spreadsheetId }),
     })
-      .then((res) => res.json())
+      .then(async (res) => {
+        const text = await res.text();
+        try {
+          return JSON.parse(text);
+        } catch {
+          return { success: false };
+        }
+      })
       .then((data) => {
-        if (data.success) {
+        if (data && data.success) {
           setScriptCode(data.script);
         }
       })
       .catch((err) => console.error('Error generating script:', err));
   }, [selectedFundCodes, spreadsheetId]);
-
-  const handleSaveSettings = () => {
-    try {
-      localStorage.setItem('tw_fund_web_app_url', webAppUrl.trim());
-      localStorage.setItem('tw_fund_spreadsheet_id', spreadsheetId.trim());
-      setSaveStatusMsg('✅ 已成功儲存 Web App URL 與 試算表 ID 設定！此設定已寫入本機紀錄。');
-      setTimeout(() => setSaveStatusMsg(''), 4000);
-    } catch (e) {
-      setSaveStatusMsg('❌ 儲存失敗，請檢查瀏覽器儲存權限');
-    }
-  };
 
   const handleTestConnection = async () => {
     if (!webAppUrl.trim()) {
@@ -72,7 +66,15 @@ export const GoogleSheetsView: React.FC<GoogleSheetsViewProps> = ({ funds, onUpd
           fundDataList: [],
         }),
       });
-      const data = await res.json();
+      const resText = await res.text();
+      let data: any = null;
+      try {
+        data = JSON.parse(resText);
+      } catch (jsonErr) {
+        setTestStatusMsg(`⚠️ 連線測試提醒: 收到非 JSON 回傳格式 (${resText.slice(0, 100)}...)。請確認 Web App URL 正確且權限為「所有人 (Anyone)」。`);
+        return;
+      }
+
       if (data.success) {
         setTestStatusMsg('🎉 Web App 連線測試成功！權限設為「所有人 (Anyone)」，可正常接收推送！');
       } else {
@@ -221,11 +223,11 @@ export const GoogleSheetsView: React.FC<GoogleSheetsViewProps> = ({ funds, onUpd
           <div className="flex items-center space-x-2">
             <Code className="w-5 h-5 text-emerald-400" />
             <h4 className="text-sm font-bold tracking-wide text-emerald-300">
-              ⚙️ Google 試算表連線參數設定 (可儲存與測試連線)
+              ⚙️ Google 試算表連線參數 (已系統內建固定，免修改 / 免存檔)
             </h4>
           </div>
-          <span className="text-[11px] bg-slate-800 text-slate-300 border border-slate-700 px-2.5 py-0.5 rounded font-mono">
-            可持久儲存於瀏覽器
+          <span className="text-[11px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2.5 py-0.5 rounded font-mono font-bold">
+            ✅ 已預設內建完成
           </span>
         </div>
 
@@ -243,53 +245,31 @@ export const GoogleSheetsView: React.FC<GoogleSheetsViewProps> = ({ funds, onUpd
                 <ExternalLink className="w-3 h-3" />
               </a>
             </label>
-            <input
-              type="text"
-              value={spreadsheetId}
-              onChange={(e) => setSpreadsheetId(e.target.value.trim())}
-              placeholder="例如: 1u4F6xNbGf2HqkwJL2kXxolEKUObzHWnMdHaGsbI5ypo"
-              className="w-full text-xs font-mono px-3 py-2 bg-slate-950 border border-slate-700 rounded-md text-emerald-300 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-            />
+            <div className="w-full text-xs font-mono px-3 py-2 bg-slate-950 border border-slate-800 rounded-md text-emerald-300 select-all overflow-x-auto break-all">
+              {spreadsheetId}
+            </div>
           </div>
 
           <div className="space-y-1.5">
             <label className="text-xs font-bold text-slate-300">
-              Apps Script Web App URL (結尾必須為 /exec):
+              Apps Script Web App URL:
             </label>
-            <input
-              type="text"
-              value={webAppUrl}
-              onChange={(e) => setWebAppUrl(e.target.value.trim())}
-              placeholder="https://script.google.com/macros/s/.../exec"
-              className="w-full text-xs font-mono px-3 py-2 bg-slate-950 border border-slate-700 rounded-md text-emerald-300 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-            />
+            <div className="w-full text-xs font-mono px-3 py-2 bg-slate-950 border border-slate-800 rounded-md text-emerald-300 select-all overflow-x-auto break-all">
+              {webAppUrl}
+            </div>
           </div>
         </div>
 
         <div className="flex items-center space-x-3 flex-wrap gap-2 pt-1">
           <button
-            onClick={handleSaveSettings}
-            className="inline-flex items-center space-x-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-md shadow transition-colors cursor-pointer"
-          >
-            <Check className="w-4 h-4" />
-            <span>💾 點此儲存 URL 與 試算表 ID 設定</span>
-          </button>
-
-          <button
             onClick={handleTestConnection}
             disabled={isTesting}
-            className="inline-flex items-center space-x-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 font-semibold text-xs rounded-md shadow transition-colors cursor-pointer"
+            className="inline-flex items-center space-x-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold text-xs rounded-md shadow transition-colors cursor-pointer"
           >
-            {isTesting ? <RefreshCw className="w-4 h-4 animate-spin text-emerald-400" /> : <Zap className="w-4 h-4 text-emerald-400" />}
+            {isTesting ? <RefreshCw className="w-4 h-4 animate-spin text-slate-950" /> : <Zap className="w-4 h-4 text-slate-950" />}
             <span>{isTesting ? '測試中...' : '🧪 測試 Web App 連線與權限'}</span>
           </button>
         </div>
-
-        {saveStatusMsg && (
-          <div className="p-3 bg-emerald-950/80 border border-emerald-700/80 rounded-md text-emerald-300 text-xs font-medium">
-            {saveStatusMsg}
-          </div>
-        )}
 
         {testStatusMsg && (
           <div className={`p-3 rounded-md text-xs font-medium border ${
@@ -485,13 +465,9 @@ export const GoogleSheetsView: React.FC<GoogleSheetsViewProps> = ({ funds, onUpd
             URL: {currentSheetUrl.substring(0, 65)}...
           </span>
         </div>
-        <input
-          type="text"
-          value={spreadsheetId}
-          onChange={(e) => setSpreadsheetId(e.target.value.trim())}
-          className="w-full text-xs font-mono px-3 py-2 bg-slate-50 border border-slate-300 rounded-md focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 text-slate-800"
-          placeholder="貼上 Google 試算表 ID..."
-        />
+        <div className="text-xs font-mono px-3 py-2 bg-slate-100 border border-slate-200 rounded-md font-bold text-slate-800 select-all overflow-x-auto">
+          {spreadsheetId}
+        </div>
 
         <div className="pt-2 border-t border-slate-100">
           <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
