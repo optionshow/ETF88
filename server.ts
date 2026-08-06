@@ -1103,6 +1103,7 @@ function doPost(e) {
       if (finalRows.length > 0) {
         sheet.getRange(2, 1, finalRows.length, 6).setValues(finalRows);
         sheet.getRange(2, 1, finalRows.length, 1).setNumberFormat("@");
+        sheet.getRange(2, 4, finalRows.length, 1).setNumberFormat("@");
         sheet.autoResizeColumns(1, 6);
       }
 
@@ -1273,7 +1274,7 @@ function updateFundDetails() {
           parseAndFormatDate(r[0]),
           r[1] || '',
           r[2] || '-',
-          r[3] || '-',
+          formatMvDisplay(r[3]),
           r[4] || '0',
           parseAndFormatRatio(r[5] || '0%')
         ];
@@ -1286,6 +1287,7 @@ function updateFundDetails() {
       if (finalRows.length > 0) {
         sheet.getRange(2, 1, finalRows.length, 6).setValues(finalRows);
         sheet.getRange(2, 1, finalRows.length, 1).setNumberFormat("@");
+        sheet.getRange(2, 4, finalRows.length, 1).setNumberFormat("@");
         sheet.autoResizeColumns(1, 6);
       }
 
@@ -1311,7 +1313,7 @@ app.post("/api/push-app-data-to-sheets", async (req, res) => {
   const { webAppUrl, fundDataList, uploadedAt } = req.body;
 
   if (!webAppUrl) {
-    return res.status(400).json({ error: "請提供 Google Apps Script Web App URL" });
+    return res.status(400).json({ success: false, error: "請提供 Google Apps Script Web App URL" });
   }
 
   const nowTime = uploadedAt || new Date().toLocaleString("zh-TW", { timeZone: "Asia/Taipei" });
@@ -1324,16 +1326,38 @@ app.post("/api/push-app-data-to-sheets", async (req, res) => {
     });
 
     const resultText = await response.text();
-    let resultJson;
+    let resultJson: any;
     try {
       resultJson = JSON.parse(resultText);
     } catch (e) {
       resultJson = { raw: resultText };
     }
 
+    if (
+      resultText.trim().startsWith("<") ||
+      resultText.includes("<html>") ||
+      resultText.includes("找不到網頁") ||
+      resultText.includes("Google Accounts") ||
+      !response.ok
+    ) {
+      return res.json({
+        success: false,
+        error: "Google 試算表 Web App URL 無法存取（網頁不存在或權限未開啟）。請確認部署設定「誰可以存取」已選「所有人 (Anyone)」。",
+        result: resultJson
+      });
+    }
+
+    if (resultJson && resultJson.status === "error") {
+      return res.json({
+        success: false,
+        error: resultJson.message || "Google Apps Script 執行發生錯誤",
+        result: resultJson
+      });
+    }
+
     return res.json({ success: true, message: "成功由 APP 將持股明細推送至 Google 試算表！", uploadedAt: nowTime, result: resultJson });
   } catch (err: any) {
-    return res.status(500).json({ error: "推送至 Google 試算表失敗: " + err.message });
+    return res.json({ success: false, error: "推送至 Google 試算表失敗: " + err.message });
   }
 });
 

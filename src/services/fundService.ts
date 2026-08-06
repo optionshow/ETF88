@@ -632,8 +632,28 @@ export async function pushAppDataToSheets(
         uploadedAt: uploadTimestamp,
       }),
     });
-    const result = await pushRes.json();
-    return result;
+    const responseText = await pushRes.text();
+    let result: any;
+    try {
+      result = JSON.parse(responseText);
+    } catch (parseErr) {
+      return {
+        success: false,
+        message: 'Google 試算表 Web App 回傳非 JSON 格式 (請於試算表確認 Web App 部署且權限設為「所有人」)',
+      };
+    }
+
+    if (result.success === false || result.error) {
+      return {
+        success: false,
+        message: result.error || '無法存取 Google 試算表 Web App',
+      };
+    }
+
+    return {
+      success: true,
+      message: result.message || '✅ 成功將目前網頁資料上傳至 Google 試算表資料庫！',
+    };
   } catch (err: any) {
     console.warn('Push app data to sheets warning:', err);
     return { success: false, message: err.message };

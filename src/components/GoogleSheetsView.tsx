@@ -131,11 +131,18 @@ export const GoogleSheetsView: React.FC<GoogleSheetsViewProps> = ({ funds, onUpd
             fundDataList: capturedFundList,
           }),
         });
-        const pushData = await pushRes.json();
+        const pushText = await pushRes.text();
+        let pushData: any;
+        try {
+          pushData = JSON.parse(pushText);
+        } catch (e) {
+          pushData = { success: false, error: 'Google 試算表 Web App 回傳非 JSON 格式' };
+        }
+
         if (pushData.success) {
           setPushStatus('✅ 匯出成功！APP 已主動將持股明細寫入 Google 試算表，無重疊並自動保留最新紀錄！');
         } else {
-          setPushStatus(`⚠️ 匯出完成，部分推送提醒: ${pushData.error || '請確認 Web App URL 權限設定'}`);
+          setPushStatus(`⚠️ 匯出提醒: ${pushData.error || '請確認 Web App URL 已開啟「所有人 (Anyone)」存取權限'}`);
         }
       } else {
         // If no WebApp URL, trigger direct instant CSV downloads as APP active export

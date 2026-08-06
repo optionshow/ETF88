@@ -95,10 +95,10 @@ export default function App() {
       setSheetsLastUpdated(nowTimestamp);
 
       const res = await pushAppDataToSheets(funds, undefined, nowTimestamp);
-      if (res.success !== false) {
+      if (res.success) {
         showToast('✅ 成功將目前網頁資料上傳至 Google 試算表資料庫！');
       } else {
-        showToast(`已嘗試上傳資料至試算表 (${res.message || '即時備份完成'})`);
+        showToast(`⚠️ 上傳訊息: ${res.message || '已備份至網頁快取 (請確認 Web App URL 設定)'}`);
       }
     } catch (e: any) {
       showToast(`上傳試算表失敗: ${e.message}`, 'error');
