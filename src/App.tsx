@@ -51,10 +51,16 @@ export default function App() {
           currentFunds = res.updatedFunds;
           setFunds(currentFunds);
           saveFunds(currentFunds);
-          setSheetsLastUpdated(getDatabaseLastUpdatedTime(currentFunds));
+          if (res.latestUploadTime) {
+            setSheetsLastUpdated(res.latestUploadTime);
+          } else {
+            setSheetsLastUpdated(getDatabaseLastUpdatedTime(currentFunds));
+          }
           if (res.syncedPeriodsCount > 0) {
             showToast(`⚡ 已自動連線並比對 Google 試算表資料庫 (${res.source})，載入 ${res.syncedPeriodsCount} 個歷史期別！`);
           }
+        } else if (res.latestUploadTime) {
+          setSheetsLastUpdated(res.latestUploadTime);
         }
 
         // 2. Check if today's date snapshot is missing in funds
@@ -113,7 +119,7 @@ export default function App() {
       const res = await syncAndMergeSheetsDatabase(funds);
       setFunds(res.updatedFunds);
       saveFunds(res.updatedFunds);
-      const updatedTime = getDatabaseLastUpdatedTime(res.updatedFunds);
+      const updatedTime = res.latestUploadTime || getDatabaseLastUpdatedTime(res.updatedFunds);
       setSheetsLastUpdated(updatedTime);
       showToast(`✅ 成功從 Google 試算表資料庫下載最新資料！共載入 ${res.syncedPeriodsCount} 個歷史期別明細。`);
     } catch (e: any) {

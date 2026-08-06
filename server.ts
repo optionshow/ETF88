@@ -913,6 +913,17 @@ function doGet(e) {
     var sheets = ss.getSheets();
     var fundDataList = [];
 
+    var uploadTimeSheet = ss.getSheetByName("最新上傳時間");
+    var latestUploadTime = "";
+    if (uploadTimeSheet) {
+      try {
+        var val = uploadTimeSheet.getRange(2, 1).getDisplayValue();
+        if (val) {
+          latestUploadTime = String(val).trim();
+        }
+      } catch (eTime) {}
+    }
+
     sheets.forEach(function(sheet) {
       var name = sheet.getName();
       if (name.indexOf("基金明細_") === 0) {
@@ -1007,6 +1018,7 @@ function doGet(e) {
 
     return ContentService.createTextOutput(JSON.stringify({
       status: "success",
+      latestUploadTime: latestUploadTime,
       count: fundDataList.length,
       data: fundDataList
     })).setMimeType(ContentService.MimeType.JSON);
@@ -1147,8 +1159,27 @@ function doPost(e) {
       }
     });
 
-    return ContentService.createTextOutput(JSON.stringify({ status: "success", message: "成功接收 APP 推送資料並已自動完成重複紀錄徹底清理 (含 6 欄與 8.44% 格式化)" }))
-      .setMimeType(ContentService.MimeType.JSON);
+    // 7. 記錄與更新「最新上傳時間」工作表 (獨立分頁)
+    var nowTaipeiStr = Utilities.formatDate(now, "Asia/Taipei", "yyyy/MM/dd HH:mm:ss");
+    var uploadTimeVal = data.uploadedAt || nowTaipeiStr;
+    try {
+      var uploadTimeSheet = ss.getSheetByName("最新上傳時間");
+      if (!uploadTimeSheet) {
+        uploadTimeSheet = ss.insertSheet("最新上傳時間");
+      }
+      uploadTimeSheet.clearContents();
+      uploadTimeSheet.getRange(1, 1, 1, 3).setValues([["最新上傳時間", "上傳基金數量", "最後系統紀錄時間"]]);
+      uploadTimeSheet.getRange(1, 1, 1, 3).setFontWeight("bold").setBackground("#EFEFEF");
+      uploadTimeSheet.getRange(2, 1, 1, 3).setValues([[uploadTimeVal, fundList.length, nowTaipeiStr]]);
+      uploadTimeSheet.getRange(2, 1, 1, 3).setNumberFormat("@");
+      uploadTimeSheet.autoResizeColumns(1, 3);
+    } catch (eTime) {}
+
+    return ContentService.createTextOutput(JSON.stringify({
+      status: "success",
+      message: "成功接收 APP 推送資料並已自動寫入「最新上傳時間」工作表",
+      latestUploadTime: uploadTimeVal
+    })).setMimeType(ContentService.MimeType.JSON);
   } catch (err) {
     return ContentService.createTextOutput(JSON.stringify({ status: "error", message: err.toString() }))
       .setMimeType(ContentService.MimeType.JSON);
@@ -1390,7 +1421,13 @@ app.post("/api/push-app-data-to-sheets", async (req, res) => {
       });
     }
 
-    return res.json({ success: true, message: "成功由 APP 將持股明細推送至 Google 試算表！", uploadedAt: nowTime, result: resultJson });
+    return res.json({
+      success: true,
+      message: "成功由 APP 將持股明細推送至 Google 試算表！",
+      uploadedAt: nowTime,
+      latestUploadTime: resultJson?.latestUploadTime || nowTime,
+      result: resultJson
+    });
   } catch (err: any) {
     return res.json({ success: false, error: "推送至 Google 試算表失敗: " + err.message });
   }
@@ -1404,6 +1441,7 @@ app.post("/api/read-sheets-database", async (req, res) => {
 
   let fetchedFromScript = false;
   let resultData: any[] = [];
+  let latestUploadTime = "";
 
   // Strategy 1: Attempt to query Google Apps Script WebApp endpoint
   if (targetWebAppUrl) {
@@ -1422,6 +1460,7 @@ app.post("/api/read-sheets-database", async (req, res) => {
         if (json && json.status === "success" && Array.isArray(json.data) && json.data.length > 0) {
           resultData = json.data;
           fetchedFromScript = true;
+          if (json.latestUploadTime) latestUploadTime = json.latestUploadTime;
         }
       }
     } catch (e) {
@@ -1446,6 +1485,7 @@ app.post("/api/read-sheets-database", async (req, res) => {
           if (json && json.status === "success" && Array.isArray(json.data) && json.data.length > 0) {
             resultData = json.data;
             fetchedFromScript = true;
+            if (json.latestUploadTime) latestUploadTime = json.latestUploadTime;
           }
         }
       } catch (e) {
@@ -1456,6 +1496,24 @@ app.post("/api/read-sheets-database", async (req, res) => {
 
   // Strategy 2: If WebApp didn't return data, fetch public/gviz CSV for requested fund codes
   if (!fetchedFromScript) {
+    if (targetSpreadsheetId) {
+      try {
+        const timeSheetUrl = `https://docs.google.com/spreadsheets/d/${targetSpreadsheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent("最新上傳時間")}`;
+        const timeRes = await fetch(timeSheetUrl);
+        if (timeRes.ok) {
+          const timeCsv = await timeRes.text();
+          const timeLines = timeCsv.split("\n").map(l => l.trim()).filter(Boolean);
+          if (timeLines.length > 1) {
+            const timeCols = timeLines[1].split(",").map(c => c.replace(/^"|"$/g, "").trim());
+            if (timeCols[0]) {
+              latestUploadTime = timeCols[0];
+            }
+          }
+        }
+      } catch (errTime) {
+        console.warn("Error reading 最新上傳時間 CSV:", errTime);
+      }
+    }
     const codesToFetch: string[] = Array.isArray(fundCodes) && fundCodes.length > 0
       ? fundCodes
       : ["00981A", "00982A", "00407A", "ACPS10", "00878", "0050"];
@@ -1565,6 +1623,7 @@ app.post("/api/read-sheets-database", async (req, res) => {
   return res.json({
     success: true,
     source: fetchedFromScript ? "Google Apps Script WebApp" : "Google Sheets CSV Export",
+    latestUploadTime: latestUploadTime || "",
     count: resultData.length,
     data: resultData
   });

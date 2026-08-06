@@ -687,6 +687,7 @@ export async function syncAndMergeSheetsDatabase(
   updatedFunds: FundData[];
   syncedPeriodsCount: number;
   totalFundsSynced: number;
+  latestUploadTime?: string;
   source: string;
 }> {
   let targetFunds: FundData[];
@@ -710,6 +711,7 @@ export async function syncAndMergeSheetsDatabase(
 
   let rawSheetData: any[] | null = null;
   let dataSource = 'Google Sheets 資料庫';
+  let fetchedLatestUploadTime = '';
 
   try {
     const res = await fetch('/api/read-sheets-database', {
@@ -733,6 +735,12 @@ export async function syncAndMergeSheetsDatabase(
       if (result.success && Array.isArray(result.data)) {
         rawSheetData = result.data;
         if (result.source) dataSource = result.source;
+        if (result.latestUploadTime) {
+          fetchedLatestUploadTime = result.latestUploadTime;
+          try {
+            localStorage.setItem('db_last_uploaded_time', fetchedLatestUploadTime);
+          } catch (e) {}
+        }
       }
     }
   } catch (err) {
@@ -754,6 +762,12 @@ export async function syncAndMergeSheetsDatabase(
         if (json && (json.status === 'success' || Array.isArray(json.data)) && Array.isArray(json.data || json)) {
           rawSheetData = json.data || json;
           dataSource = 'Google Apps Script 雲端資料庫';
+          if (json.latestUploadTime) {
+            fetchedLatestUploadTime = json.latestUploadTime;
+            try {
+              localStorage.setItem('db_last_uploaded_time', fetchedLatestUploadTime);
+            } catch (e) {}
+          }
         }
       }
     } catch (directErr) {
@@ -921,6 +935,7 @@ export async function syncAndMergeSheetsDatabase(
         updatedFunds: updatedFundsList,
         syncedPeriodsCount: totalSyncedPeriods,
         totalFundsSynced,
+        latestUploadTime: fetchedLatestUploadTime || (typeof window !== 'undefined' ? localStorage.getItem('db_last_uploaded_time') || undefined : undefined),
         source: dataSource,
       };
     } catch (err) {
