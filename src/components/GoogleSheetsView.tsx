@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { FundData } from '../types';
-import { FileSpreadsheet, Copy, Check, Download, ExternalLink, Code, Clock, RefreshCw, Trash2, Send, Zap, Database, Calendar, Eye, Layers } from 'lucide-react';
+import { FileSpreadsheet, Copy, Check, Download, ExternalLink, Code, Clock, RefreshCw, Trash2, Zap, Database, Calendar, Eye, Layers } from 'lucide-react';
 import { syncAndMergeSheetsDatabase, normalizeDateString } from '../services/fundService';
 
 interface GoogleSheetsViewProps {
@@ -11,10 +11,15 @@ interface GoogleSheetsViewProps {
 export const GoogleSheetsView: React.FC<GoogleSheetsViewProps> = ({ funds, onUpdateFunds }) => {
   const [copied, setCopied] = useState(false);
   const [scriptCode, setScriptCode] = useState<string>('');
-  const [spreadsheetId, setSpreadsheetId] = useState<string>('1u4F6xNbGf2HqkwJL2kXxolEKUObzHWnMdHaGsbI5ypo');
-  const [webAppUrl, setWebAppUrl] = useState<string>('https://script.google.com/macros/s/AKfycbyAPZfZYLT1Igoo1BRAc6GDdvUcWYTV9HubJVQOGjK1NHqNsjSCpnR0kH4VCgM_6xMm/exec');
-  const [isPushing, setIsPushing] = useState<boolean>(false);
-  const [pushStatus, setPushStatus] = useState<string>('');
+  const [spreadsheetId, setSpreadsheetId] = useState<string>(() => {
+    return (typeof window !== 'undefined' && localStorage.getItem('tw_fund_spreadsheet_id')) || '1u4F6xNbGf2HqkwJL2kXxolEKUObzHWnMdHaGsbI5ypo';
+  });
+  const [webAppUrl, setWebAppUrl] = useState<string>(() => {
+    return (typeof window !== 'undefined' && localStorage.getItem('tw_fund_web_app_url')) || 'https://script.google.com/macros/s/AKfycbyAPZfZYLT1Igoo1BRAc6GDdvUcWYTV9HubJVQOGjK1NHqNsjSCpnR0kH4VCgM_6xMm/exec';
+  });
+  const [saveStatusMsg, setSaveStatusMsg] = useState<string>('');
+  const [isTesting, setIsTesting] = useState<boolean>(false);
+  const [testStatusMsg, setTestStatusMsg] = useState<string>('');
   const [isReadingDb, setIsReadingDb] = useState<boolean>(false);
   const [dbReadStatus, setDbReadStatus] = useState<string>('');
   const [selectedFundCodeForPeriod, setSelectedFundCodeForPeriod] = useState<string>('00981A.TW');
@@ -38,6 +43,47 @@ export const GoogleSheetsView: React.FC<GoogleSheetsViewProps> = ({ funds, onUpd
       })
       .catch((err) => console.error('Error generating script:', err));
   }, [selectedFundCodes, spreadsheetId]);
+
+  const handleSaveSettings = () => {
+    try {
+      localStorage.setItem('tw_fund_web_app_url', webAppUrl.trim());
+      localStorage.setItem('tw_fund_spreadsheet_id', spreadsheetId.trim());
+      setSaveStatusMsg('✅ 已成功儲存 Web App URL 與 試算表 ID 設定！此設定已寫入本機紀錄。');
+      setTimeout(() => setSaveStatusMsg(''), 4000);
+    } catch (e) {
+      setSaveStatusMsg('❌ 儲存失敗，請檢查瀏覽器儲存權限');
+    }
+  };
+
+  const handleTestConnection = async () => {
+    if (!webAppUrl.trim()) {
+      setTestStatusMsg('❌ 請先輸入 Google Apps Script Web App URL');
+      return;
+    }
+    setIsTesting(true);
+    setTestStatusMsg('🔍 正在測試連線至 Google Apps Script Web App...');
+
+    try {
+      const res = await fetch('/api/push-app-data-to-sheets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          webAppUrl: webAppUrl.trim(),
+          fundDataList: [],
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setTestStatusMsg('🎉 Web App 連線測試成功！權限設為「所有人 (Anyone)」，可正常接收推送！');
+      } else {
+        setTestStatusMsg(`⚠️ 連線測試提醒: ${data.error || '請確認 Web App URL 已選「所有人 (Anyone)」權限並重新部署'}`);
+      }
+    } catch (err: any) {
+      setTestStatusMsg(`❌ 連線測試失敗: ${err.message}`);
+    } finally {
+      setIsTesting(false);
+    }
+  };
 
   const handleCopyScript = () => {
     navigator.clipboard.writeText(scriptCode);
@@ -66,97 +112,6 @@ export const GoogleSheetsView: React.FC<GoogleSheetsViewProps> = ({ funds, onUpd
           a.click();
         });
     });
-  };
-
-  const handleAppDrivenExport = async () => {
-    setIsPushing(true);
-    setPushStatus('🔍 APP 正在主動擷取 6 檔基金/ETF 持股明細 (截至 2026/08/03)...');
-
-    try {
-      // Step 1: Gather captured fund data from APP
-      const capturedFundList = await Promise.all(
-        selectedFundCodes.map(async (code) => {
-          try {
-            const res = await fetch(`/api/fund-details/${code}`);
-            const data = await res.json();
-            const fundInfo = data.data || data;
-            const localFund = funds.find((f) => f.code === code);
-            const activeSnapshot = localFund?.snapshots[0];
-
-            let rawHoldings = fundInfo.holdings;
-            if (!rawHoldings || rawHoldings.length === 0) {
-              rawHoldings = activeSnapshot?.holdings || [];
-            }
-
-            const holdings = rawHoldings.map((h: any) => {
-              const price = h.price || 120;
-              const shares = h.shares || 0;
-              const marketValue = h.marketValue || (price * shares);
-              return {
-                ...h,
-                price,
-                marketValue,
-              };
-            });
-
-            return {
-              code,
-              asOfDate: normalizeDateString(fundInfo.asOfDate || activeSnapshot?.asOfDate || '2026/08/03'),
-              holdings,
-            };
-          } catch (e) {
-            const localFund = funds.find((f) => f.code === code);
-            const activeSnapshot = localFund?.snapshots[0];
-            return {
-              code,
-              asOfDate: normalizeDateString(localFund?.asOfDate || activeSnapshot?.asOfDate || '2026/08/03'),
-              holdings: (activeSnapshot?.holdings || []).map((h) => ({
-                ...h,
-                price: h.price || 120,
-                marketValue: h.marketValue || ((h.price || 120) * h.shares),
-              })),
-            };
-          }
-        })
-      );
-
-      // If WebApp URL is provided, push directly to Google Sheets
-      if (webAppUrl.trim()) {
-        setPushStatus('📤 APP 正在將擷取的持股明細主動寫入 Google 試算表...');
-        const pushRes = await fetch('/api/push-app-data-to-sheets', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            webAppUrl: webAppUrl.trim(),
-            fundDataList: capturedFundList,
-          }),
-        });
-        const pushText = await pushRes.text();
-        let pushData: any;
-        try {
-          pushData = JSON.parse(pushText);
-        } catch (e) {
-          pushData = { success: false, error: 'Google 試算表 Web App 回傳非 JSON 格式' };
-        }
-
-        if (pushData.success) {
-          setPushStatus('✅ 匯出成功！APP 已主動將持股明細寫入 Google 試算表，無重疊並自動保留最新紀錄！');
-        } else {
-          setPushStatus(`⚠️ 匯出提醒: ${pushData.error || '請確認 Web App URL 已開啟「所有人 (Anyone)」存取權限'}`);
-        }
-      } else {
-        // If no WebApp URL, trigger direct instant CSV downloads as APP active export
-        setPushStatus('⚡ APP 已完成持股擷取！正在下載全套 20 檔明細 CSV 檔案...');
-        handleDownloadAllCSV();
-        setTimeout(() => {
-          setPushStatus('✅ APP 擷取與匯出完成！資料日期統一為 2026/08/03 (最多 20 檔持股)。');
-        }, 1500);
-      }
-    } catch (err: any) {
-      setPushStatus(`❌ APP 匯出發生錯誤: ${err.message}`);
-    } finally {
-      setIsPushing(false);
-    }
   };
 
   const handleReadDatabase = async () => {
@@ -199,14 +154,14 @@ export const GoogleSheetsView: React.FC<GoogleSheetsViewProps> = ({ funds, onUpd
             <div>
               <div className="flex items-center space-x-2 flex-wrap gap-y-1">
                 <h3 className="text-base font-bold text-slate-900">
-                  APP 主動擷取持股 & 匯出至 Google 試算表
+                  Google 試算表同步與 Apps Script 自動更新設定
                 </h3>
                 <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 font-bold text-[10px] rounded-full">
-                  免網站重複擷取
+                  支援雙向比對 &amp; 歷史期別
                 </span>
               </div>
               <p className="text-xs text-slate-600 leading-relaxed max-w-2xl mt-1">
-                本系統已由 APP 自動完成 6 檔基金/ETF 最新 20 檔持股擷取（資料日期: <span className="text-emerald-700 font-bold">2026/08/03</span>）。您可以直接點擊按鈕由 APP 主動將資料寫入 Google 試算表，不需在 Apps Script 裡重複去網站抓取！
+                本系統提供 Google Apps Script 貼上即用的專屬語法與連線設定。您可以直接複製程式碼並在 Apps Script 部署為 Web App（權限設為所有人），系統將自動進行雙向資料備份與歷史期別比對。
               </p>
             </div>
           </div>
@@ -260,54 +215,91 @@ export const GoogleSheetsView: React.FC<GoogleSheetsViewProps> = ({ funds, onUpd
         </div>
       </div>
 
-      {/* Direct APP Export Action Card */}
-      <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-emerald-950 rounded-lg p-5 text-white shadow-md space-y-4">
-        <div className="flex items-center justify-between flex-wrap gap-2">
+      {/* URL & Spreadsheet ID Settings Panel */}
+      <div className="bg-slate-900 border border-slate-700 rounded-lg p-5 text-white shadow-md space-y-4">
+        <div className="flex items-center justify-between flex-wrap gap-2 pb-2 border-b border-slate-800">
           <div className="flex items-center space-x-2">
-            <Send className="w-5 h-5 text-emerald-400" />
+            <Code className="w-5 h-5 text-emerald-400" />
             <h4 className="text-sm font-bold tracking-wide text-emerald-300">
-              ⚡ APP 一鍵擷取並主動匯出至 Google 試算表
+              ⚙️ Google 試算表連線參數設定 (可儲存與測試連線)
             </h4>
           </div>
-          <span className="text-[11px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2.5 py-0.5 rounded-full font-mono">
-            資料日期: 2026/08/03 (含前20大持股)
+          <span className="text-[11px] bg-slate-800 text-slate-300 border border-slate-700 px-2.5 py-0.5 rounded font-mono">
+            可持久儲存於瀏覽器
           </span>
         </div>
 
-        <p className="text-xs text-slate-300 leading-relaxed">
-          點擊下方按鈕後，APP 會將已擷取的 20 檔持股明細數據直接整理完畢，主動寫入至您的 Google 試算表，確保不重疊且自動清理 60 天前紀錄。
-        </p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-slate-300 flex items-center justify-between">
+              <span>Google 試算表 ID (Spreadsheet ID):</span>
+              <a
+                href={currentSheetUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="text-emerald-400 hover:underline text-[11px] font-normal inline-flex items-center space-x-1"
+              >
+                <span>開啟目標試算表</span>
+                <ExternalLink className="w-3 h-3" />
+              </a>
+            </label>
+            <input
+              type="text"
+              value={spreadsheetId}
+              onChange={(e) => setSpreadsheetId(e.target.value.trim())}
+              placeholder="例如: 1u4F6xNbGf2HqkwJL2kXxolEKUObzHWnMdHaGsbI5ypo"
+              className="w-full text-xs font-mono px-3 py-2 bg-slate-950 border border-slate-700 rounded-md text-emerald-300 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+            />
+          </div>
 
-        {/* Optional Web App URL */}
-        <div className="space-y-1">
-          <label className="text-[11px] font-bold text-slate-300">
-            Google Apps Script 網頁應用程式 URL (選填，若需要即時 Webhook 直連推送):
-          </label>
-          <input
-            type="text"
-            value={webAppUrl}
-            onChange={(e) => setWebAppUrl(e.target.value.trim())}
-            placeholder="例如: https://script.google.com/macros/s/AKfycb.../exec"
-            className="w-full text-xs font-mono px-3 py-2 bg-slate-950/80 border border-slate-700 rounded-md text-emerald-300 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-          />
+          <div className="space-y-1.5">
+            <label className="text-xs font-bold text-slate-300">
+              Apps Script Web App URL (結尾必須為 /exec):
+            </label>
+            <input
+              type="text"
+              value={webAppUrl}
+              onChange={(e) => setWebAppUrl(e.target.value.trim())}
+              placeholder="https://script.google.com/macros/s/.../exec"
+              className="w-full text-xs font-mono px-3 py-2 bg-slate-950 border border-slate-700 rounded-md text-emerald-300 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+            />
+          </div>
         </div>
 
-        <div className="pt-2 flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center space-x-3 flex-wrap gap-2 pt-1">
           <button
-            onClick={handleAppDrivenExport}
-            disabled={isPushing}
-            className="inline-flex items-center space-x-2 px-5 py-2.5 bg-emerald-500 hover:bg-emerald-400 disabled:bg-slate-700 text-slate-950 font-extrabold text-xs rounded-md transition-all shadow-md cursor-pointer"
+            onClick={handleSaveSettings}
+            className="inline-flex items-center space-x-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-md shadow transition-colors cursor-pointer"
           >
-            {isPushing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-            <span>{isPushing ? 'APP 正在擷取與匯出中...' : '🚀 1-Click: 由 APP 擷取資料並主動匯出'}</span>
+            <Check className="w-4 h-4" />
+            <span>💾 點此儲存 URL 與 試算表 ID 設定</span>
           </button>
 
-          {pushStatus && (
-            <div className="text-xs font-medium text-emerald-300 bg-emerald-950/80 px-3 py-2 rounded border border-emerald-800/60 max-w-xl">
-              {pushStatus}
-            </div>
-          )}
+          <button
+            onClick={handleTestConnection}
+            disabled={isTesting}
+            className="inline-flex items-center space-x-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 font-semibold text-xs rounded-md shadow transition-colors cursor-pointer"
+          >
+            {isTesting ? <RefreshCw className="w-4 h-4 animate-spin text-emerald-400" /> : <Zap className="w-4 h-4 text-emerald-400" />}
+            <span>{isTesting ? '測試中...' : '🧪 測試 Web App 連線與權限'}</span>
+          </button>
         </div>
+
+        {saveStatusMsg && (
+          <div className="p-3 bg-emerald-950/80 border border-emerald-700/80 rounded-md text-emerald-300 text-xs font-medium">
+            {saveStatusMsg}
+          </div>
+        )}
+
+        {testStatusMsg && (
+          <div className={`p-3 rounded-md text-xs font-medium border ${
+            testStatusMsg.includes('成功')
+              ? 'bg-emerald-950/80 border-emerald-700 text-emerald-300'
+              : 'bg-amber-950/80 border-amber-700 text-amber-200'
+          }`}>
+            {testStatusMsg}
+          </div>
+        )}
       </div>
 
       {/* Google Sheets Historical Period Database Viewer */}
@@ -543,11 +535,18 @@ export const GoogleSheetsView: React.FC<GoogleSheetsViewProps> = ({ funds, onUpd
         <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-purple-600 shadow-sm">
           <div className="flex items-center space-x-2 text-purple-600 font-bold text-xs mb-2">
             <span className="w-5 h-5 rounded-full bg-purple-100 flex items-center justify-center text-purple-700 font-mono">2</span>
-            <span>部署為 Web App 或觸發器</span>
+            <span>部署為 Web App (權限設為「所有人」)</span>
           </div>
-          <p className="text-xs text-slate-600 leading-relaxed">
-            若要由 APP 直連推送，請點選「部署 &gt; 新增部署作業 &gt; 網頁應用程式 (所有人皆可存取)」，貼上 URL 即可 APP 1-Click 推送；或執行 <span className="font-semibold text-slate-900">setupDailyTrigger</span> 每日 08:00 更新。
-          </p>
+          <div className="text-xs text-slate-600 leading-relaxed space-y-1">
+            <p className="font-semibold text-slate-900">點選 Apps Script 右上角【部署】➔【新增部署作業】：</p>
+            <ol className="list-decimal list-inside space-y-0.5 text-slate-700">
+              <li>選取類型：點選齒輪圖案選擇<b>「網頁應用程式 (Web App)」</b></li>
+              <li>執行身份：選擇<b>「我 (Me)」</b></li>
+              <li><b>關鍵步驟【誰可以存取】：選擇「所有人 (Anyone)」</b></li>
+              <li>點選<b>【部署】</b>，授權 Google 帳號存取</li>
+              <li>複製產生的 Web App 網址 (https://script.google.com/macros/s/...) 貼回本系統頂端輸入框即可！</li>
+            </ol>
+          </div>
         </div>
 
         <div className="bg-white p-4 rounded-lg border border-slate-200 border-l-4 border-l-emerald-600 shadow-sm">

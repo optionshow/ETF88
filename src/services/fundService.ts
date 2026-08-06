@@ -598,7 +598,8 @@ export async function pushAppDataToSheets(
   webAppUrl?: string,
   uploadedAt?: string
 ): Promise<{ success: boolean; message?: string }> {
-  const defaultWebAppUrl = webAppUrl || 'https://script.google.com/macros/s/AKfycbyAPZfZYLT1Igoo1BRAc6GDdvUcWYTV9HubJVQOGjK1NHqNsjSCpnR0kH4VCgM_6xMm/exec';
+  const savedUrl = typeof window !== 'undefined' ? localStorage.getItem('tw_fund_web_app_url') : null;
+  const defaultWebAppUrl = (webAppUrl || savedUrl || 'https://script.google.com/macros/s/AKfycbyAPZfZYLT1Igoo1BRAc6GDdvUcWYTV9HubJVQOGjK1NHqNsjSCpnR0kH4VCgM_6xMm/exec').trim();
 
   const uploadTimestamp = uploadedAt || new Date().toLocaleString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).replace(/-/g, '/');
   try {
@@ -688,8 +689,11 @@ export async function syncAndMergeSheetsDatabase(
     targetFunds = getSavedFunds();
   }
 
-  const defaultSpreadsheetId = targetSpreadsheetId || '1u4F6xNbGf2HqkwJL2kXxolEKUObzHWnMdHaGsbI5ypo';
-  const defaultWebAppUrl = targetWebAppUrl || 'https://script.google.com/macros/s/AKfycbyAPZfZYLT1Igoo1BRAc6GDdvUcWYTV9HubJVQOGjK1NHqNsjSCpnR0kH4VCgM_6xMm/exec';
+  const savedUrl = typeof window !== 'undefined' ? localStorage.getItem('tw_fund_web_app_url') : null;
+  const savedSpreadsheetId = typeof window !== 'undefined' ? localStorage.getItem('tw_fund_spreadsheet_id') : null;
+
+  const defaultSpreadsheetId = targetSpreadsheetId || savedSpreadsheetId || '1u4F6xNbGf2HqkwJL2kXxolEKUObzHWnMdHaGsbI5ypo';
+  const defaultWebAppUrl = targetWebAppUrl || savedUrl || 'https://script.google.com/macros/s/AKfycbyAPZfZYLT1Igoo1BRAc6GDdvUcWYTV9HubJVQOGjK1NHqNsjSCpnR0kH4VCgM_6xMm/exec';
 
   let rawSheetData: any[] | null = null;
   let dataSource = 'Google Sheets 資料庫';

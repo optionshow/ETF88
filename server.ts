@@ -1350,14 +1350,17 @@ app.post("/api/push-app-data-to-sheets", async (req, res) => {
   const nowTime = uploadedAt || new Date().toLocaleString("zh-TW", { timeZone: "Asia/Taipei" });
 
   try {
+    const requestPayload = JSON.stringify({ fundDataList: fundDataList || [], uploadedAt: nowTime });
+
     const response = await fetch(webAppUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fundDataList, uploadedAt: nowTime }),
+      body: requestPayload,
+      redirect: "follow",
     });
 
     const resultText = await response.text();
-    let resultJson: any;
+    let resultJson: any = null;
     try {
       resultJson = JSON.parse(resultText);
     } catch (e) {
@@ -1367,13 +1370,14 @@ app.post("/api/push-app-data-to-sheets", async (req, res) => {
     if (
       resultText.trim().startsWith("<") ||
       resultText.includes("<html>") ||
+      resultText.includes("<!DOCTYPE") ||
       resultText.includes("找不到網頁") ||
       resultText.includes("Google Accounts") ||
       !response.ok
     ) {
       return res.json({
         success: false,
-        error: "Google 試算表 Web App URL 無法存取（網頁不存在或權限未開啟）。請確認部署設定「誰可以存取」已選「所有人 (Anyone)」。",
+        error: "Google 試算表 Web App 無法存取 (回傳 HTML 或登入頁)。請確認: 1. Apps Script 已部署為 Web App；2. 【誰可以存取】選取「所有人 (Anyone)」；3. 網址結尾為 /exec",
         result: resultJson
       });
     }
