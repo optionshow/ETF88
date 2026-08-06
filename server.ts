@@ -783,6 +783,24 @@ function parseAndFormatRatio(val) {
   return (Math.round(num * 100) / 100) + '%';
 }
 
+function formatMvDisplay(val) {
+  if (val === undefined || val === null || val === "" || val === "-" || val === "NaN") return "-";
+  if (typeof val === "number") {
+    if (val <= 0 || isNaN(val)) return "-";
+    var v = val > 100000 ? Math.round(val / 10000) : Math.round(val);
+    return v + " 萬";
+  }
+  var str = String(val).trim();
+  if (!str || str === "-" || str === "NaN") return "-";
+  var clean = str.replace(/[^0-9.]/g, "");
+  var num = parseFloat(clean);
+  if (isNaN(num) || num <= 0) return "-";
+  if (num > 100000 && str.indexOf("萬") === -1) {
+    num = num / 10000;
+  }
+  return Math.round(num) + " 萬";
+}
+
 function extractStockKey(nameStr) {
   if (!nameStr) return '';
   var clean = String(nameStr).trim();
@@ -802,7 +820,7 @@ function deduplicateAndCleanRows(rows) {
     var key = d + "||" + stockKey;
 
     var price = r[2] || '-';
-    var mv = r[3] || '-';
+    var mv = formatMvDisplay(r[3]);
     var shares = r[4] || '0';
     var ratio = parseAndFormatRatio(r[5] || r[3] || '0%');
 
@@ -1013,13 +1031,14 @@ function doPost(e) {
 
         if (row.length >= 6) {
           price = row[2] || '-';
-          mv = row[3] || '-';
+          mv = formatMvDisplay(row[3]);
           shares = row[4] || '0';
           ratio = parseAndFormatRatio(row[5] || '0%');
         } else if (row.length === 5) {
           price = row[2] || '-';
-          shares = row[3] || '0';
-          ratio = parseAndFormatRatio(row[4] || '0%');
+          mv = formatMvDisplay(row[3]);
+          shares = row[4] || '0';
+          ratio = parseAndFormatRatio(row[5] || '0%');
         } else if (row.length >= 3) {
           shares = row[2] || '0';
           ratio = parseAndFormatRatio(row[3] || '0%');
@@ -1032,7 +1051,7 @@ function doPost(e) {
         var priceDisplay = h.price ? Number(h.price) : "-";
         var sharesNum = Number(h.shares) || 0;
         var mv = h.marketValue || (h.price ? (Number(h.price) * sharesNum) : 0);
-        var mvDisplay = mv > 0 ? Math.round(mv / 10000) + " 萬" : "-";
+        var mvDisplay = formatMvDisplay(mv);
         var ratioFormatted = parseAndFormatRatio(h.ratio);
 
         return [
@@ -1070,7 +1089,7 @@ function doPost(e) {
           parseAndFormatDate(r[0]),
           r[1] || '',
           r[2] || '-',
-          r[3] || '-',
+          formatMvDisplay(r[3]),
           r[4] || '0',
           parseAndFormatRatio(r[5] || '0%')
         ];

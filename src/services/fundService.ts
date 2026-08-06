@@ -614,7 +614,7 @@ export async function pushAppDataToSheets(
         stockName: h.stockName,
         stockCode: h.stockCode,
         price: h.price || 0,
-        marketValue: h.marketValue || ((h.price || 0) * h.shares),
+        marketValue: Math.round(h.marketValue || ((h.price || 0) * h.shares)),
         shares: h.shares,
         sharesFormatted: h.sharesFormatted || h.shares.toLocaleString(),
         ratio: h.ratio,
