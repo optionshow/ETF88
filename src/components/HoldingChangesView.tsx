@@ -2,10 +2,6 @@ import React, { useState } from 'react';
 import { FundData, HoldingChange } from '../types';
 import { calculateHoldingChanges } from '../services/fundService';
 import {
-  ArrowUpRight,
-  ArrowDownRight,
-  PlusCircle,
-  MinusCircle,
   Layers,
   Calendar,
   Filter,
@@ -351,81 +347,6 @@ export const HoldingChangesView: React.FC<HoldingChangesViewProps> = ({
         </div>
       </div>
 
-      {/* Dynamic Change Cards (Summary Cards) */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <button
-          onClick={() => setStatusFilter(statusFilter === 'new' ? 'all' : 'new')}
-          className={`p-4 rounded-lg border border-slate-200 border-l-4 border-l-emerald-600 text-left transition-all shadow-sm cursor-pointer ${
-            statusFilter === 'new'
-              ? 'bg-emerald-50 border-emerald-300'
-              : 'bg-white hover:bg-slate-50'
-          }`}
-        >
-          <div className="flex items-center justify-between text-xs text-slate-500 mb-1">
-            <span className="font-semibold">{isAll ? '累計新進個股' : '新進持股'} (New)</span>
-            <PlusCircle className="w-4 h-4 text-emerald-600" />
-          </div>
-          <div className="text-2xl font-bold text-emerald-600">
-            {countNew} <span className="text-xs font-normal text-slate-500">檔</span>
-          </div>
-          <p className="text-[11px] text-slate-500 mt-1">本期新建立倉位個股</p>
-        </button>
-
-        <button
-          onClick={() => setStatusFilter(statusFilter === 'increase' ? 'all' : 'increase')}
-          className={`p-4 rounded-lg border border-slate-200 border-l-4 border-l-blue-600 text-left transition-all shadow-sm cursor-pointer ${
-            statusFilter === 'increase'
-              ? 'bg-blue-50 border-blue-300'
-              : 'bg-white hover:bg-slate-50'
-          }`}
-        >
-          <div className="flex items-center justify-between text-xs text-slate-500 mb-1">
-            <span className="font-semibold">{isAll ? '累計加碼個股' : '加碼個股'} (Increase)</span>
-            <ArrowUpRight className="w-4 h-4 text-blue-600" />
-          </div>
-          <div className="text-2xl font-bold text-blue-600">
-            {countInc} <span className="text-xs font-normal text-slate-500">檔</span>
-          </div>
-          <p className="text-[11px] text-slate-500 mt-1">跨基金整體淨增持個股</p>
-        </button>
-
-        <button
-          onClick={() => setStatusFilter(statusFilter === 'decrease' ? 'all' : 'decrease')}
-          className={`p-4 rounded-lg border border-slate-200 border-l-4 border-l-amber-500 text-left transition-all shadow-sm cursor-pointer ${
-            statusFilter === 'decrease'
-              ? 'bg-amber-50 border-amber-300'
-              : 'bg-white hover:bg-slate-50'
-          }`}
-        >
-          <div className="flex items-center justify-between text-xs text-slate-500 mb-1">
-            <span className="font-semibold">{isAll ? '累計減碼個股' : '減碼個股'} (Decrease)</span>
-            <ArrowDownRight className="w-4 h-4 text-amber-600" />
-          </div>
-          <div className="text-2xl font-bold text-amber-600">
-            {countDec} <span className="text-xs font-normal text-slate-500">檔</span>
-          </div>
-          <p className="text-[11px] text-slate-500 mt-1">跨基金整體獲利調節個股</p>
-        </button>
-
-        <button
-          onClick={() => setStatusFilter(statusFilter === 'exit' ? 'all' : 'exit')}
-          className={`p-4 rounded-lg border border-slate-200 border-l-4 border-l-red-600 text-left transition-all shadow-sm cursor-pointer ${
-            statusFilter === 'exit'
-              ? 'bg-red-50 border-red-300'
-              : 'bg-white hover:bg-slate-50'
-          }`}
-        >
-          <div className="flex items-center justify-between text-xs text-slate-500 mb-1">
-            <span className="font-semibold">{isAll ? '累計出清個股' : '出清部位'} (Exit)</span>
-            <MinusCircle className="w-4 h-4 text-red-600" />
-          </div>
-          <div className="text-2xl font-bold text-red-600">
-            {countExit} <span className="text-xs font-normal text-slate-500">檔</span>
-          </div>
-          <p className="text-[11px] text-slate-500 mt-1">跨基金已完全清空個股</p>
-        </button>
-      </div>
-
       {/* CONSOLIDATED TABLE VIEW (One row per stock) */}
       <div className="bg-white rounded-lg border border-slate-200 overflow-hidden shadow-sm">
         <div className="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50">
@@ -433,7 +354,7 @@ export const HoldingChangesView: React.FC<HoldingChangesViewProps> = ({
             <Filter className="w-4 h-4 text-blue-600" />
             <h3 className="text-sm font-bold text-slate-900">
               {isAll
-                ? `全部基金持股異動累計對照表 (${targetLatestDate} vs ${targetPrevDate})`
+                ? `全部基金持股異動對照表 (${targetLatestDate} vs ${targetPrevDate})`
                 : `${currentFund?.name} 持股變動對照表 (${targetLatestDate} vs ${targetPrevDate})`}
             </h3>
           </div>
@@ -536,87 +457,40 @@ export const HoldingChangesView: React.FC<HoldingChangesViewProps> = ({
                 filteredAggregated.map((item, idx) => {
                   const mvTenThousand = Math.round(item.marketValue / 10000);
 
-                  // Build fund action summary tag for ALL mode
-                  let fundActionText = '';
-                  if (isAll) {
-                    const parts: string[] = [];
-                    if (item.incCount > 0) parts.push(`${item.incCount}檔加碼`);
-                    if (item.newCount > 0) parts.push(`${item.newCount}檔新進`);
-                    if (item.decCount > 0) parts.push(`${item.decCount}檔減碼`);
-                    if (item.exitCount > 0) parts.push(`${item.exitCount}檔出清`);
-                    if (parts.length > 0) {
-                      fundActionText = `(${parts.join(', ')})`;
-                    } else {
-                      fundActionText = `(${item.fundCount}檔持平)`;
-                    }
-                  }
-
                   return (
                     <tr key={idx} className="hover:bg-slate-50 transition-colors">
                       {/* 異動狀況 */}
                       <td className="py-2.5 px-4 whitespace-nowrap">
                         {item.overallStatus === 'new' && (
-                          <div className="flex flex-col items-start gap-0.5">
-                            <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded text-[11px] font-bold">
-                              + 新進持股
-                            </span>
-                            {isAll && fundActionText && (
-                              <span className="text-[10px] text-emerald-700 font-semibold">{fundActionText}</span>
-                            )}
-                          </div>
+                          <span className="bg-emerald-100 text-emerald-800 border border-emerald-300 px-2 py-0.5 rounded text-[11px] font-bold">
+                            + 新進持股
+                          </span>
                         )}
                         {item.overallStatus === 'increase' && (
-                          <div className="flex flex-col items-start gap-0.5">
-                            <span className="bg-blue-100 text-blue-800 border border-blue-300 px-2 py-0.5 rounded text-[11px] font-bold">
-                              ▲ 整體加碼
-                            </span>
-                            {isAll && fundActionText && (
-                              <span className="text-[10px] text-blue-700 font-semibold">{fundActionText}</span>
-                            )}
-                          </div>
+                          <span className="bg-blue-100 text-blue-800 border border-blue-300 px-2 py-0.5 rounded text-[11px] font-bold">
+                            ▲ 整體加碼
+                          </span>
                         )}
                         {item.overallStatus === 'decrease' && (
-                          <div className="flex flex-col items-start gap-0.5">
-                            <span className="bg-amber-100 text-amber-800 border border-amber-300 px-2 py-0.5 rounded text-[11px] font-bold">
-                              ▼ 整體減碼
-                            </span>
-                            {isAll && fundActionText && (
-                              <span className="text-[10px] text-amber-700 font-semibold">{fundActionText}</span>
-                            )}
-                          </div>
+                          <span className="bg-amber-100 text-amber-800 border border-amber-300 px-2 py-0.5 rounded text-[11px] font-bold">
+                            ▼ 整體減碼
+                          </span>
                         )}
                         {item.overallStatus === 'exit' && (
-                          <div className="flex flex-col items-start gap-0.5">
-                            <span className="bg-red-100 text-red-800 border border-red-300 px-2 py-0.5 rounded text-[11px] font-bold">
-                              ✕ 整體出清
-                            </span>
-                            {isAll && fundActionText && (
-                              <span className="text-[10px] text-red-700 font-semibold">{fundActionText}</span>
-                            )}
-                          </div>
+                          <span className="bg-red-100 text-red-800 border border-red-300 px-2 py-0.5 rounded text-[11px] font-bold">
+                            ✕ 整體出清
+                          </span>
                         )}
                         {item.overallStatus === 'unchanged' && (
-                          <div className="flex flex-col items-start gap-0.5">
-                            <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-[11px] font-medium border border-slate-200">
-                              持平
-                            </span>
-                            {isAll && fundActionText && (
-                              <span className="text-[10px] text-slate-500 font-semibold">{fundActionText}</span>
-                            )}
-                          </div>
+                          <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-[11px] font-medium border border-slate-200">
+                            持平
+                          </span>
                         )}
                       </td>
 
                       {/* 個股名稱 */}
                       <td className="py-2.5 px-4 font-bold text-slate-900 whitespace-nowrap">
-                        <div className="flex items-center space-x-1.5">
-                          <span>{item.stockName}</span>
-                          {item.stockCode && (
-                            <span className="text-[10px] font-mono bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded border border-slate-200">
-                              {item.stockCode}
-                            </span>
-                          )}
-                        </div>
+                        <span>{item.stockName}</span>
                       </td>
 
                       {/* 目前股價 */}
