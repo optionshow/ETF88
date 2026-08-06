@@ -1,11 +1,23 @@
 import React from 'react';
-import { RefreshCw, PlusCircle, FileSpreadsheet, Layers, PieChart, Info, Database, Home } from 'lucide-react';
+import {
+  RefreshCw,
+  FileSpreadsheet,
+  Layers,
+  PieChart,
+  Info,
+  Home,
+  Upload,
+  Download,
+  Clock,
+} from 'lucide-react';
 
 interface NavbarProps {
   activeTab: 'details' | 'changes' | 'overlap' | 'top5' | 'sheets';
   setActiveTab: (tab: 'details' | 'changes' | 'overlap' | 'top5' | 'sheets') => void;
   onRefreshAll: () => void;
-  onSyncSheetsDatabase?: () => void;
+  onUploadToSheets: () => void;
+  onDownloadFromSheets: () => void;
+  sheetsLastUpdated: string;
   isRefreshing: boolean;
 }
 
@@ -13,7 +25,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   activeTab,
   setActiveTab,
   onRefreshAll,
-  onSyncSheetsDatabase,
+  onUploadToSheets,
+  onDownloadFromSheets,
+  sheetsLastUpdated,
   isRefreshing,
 }) => {
   return (
@@ -34,32 +48,54 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </span>
               </div>
               <p className="text-xs text-slate-500">
-                每日自動擷取基金與 ETF 投資明細（08:00 &amp; 18:00 自動執行）
+                每日自動擷取基金與 ETF 投資明細（08:00、16:00 &amp; 18:00 自動執行）
               </p>
             </div>
           </div>
 
           {/* Action Buttons */}
-          <div className="flex items-center space-x-2">
-            {onSyncSheetsDatabase && (
-              <button
-                onClick={onSyncSheetsDatabase}
-                disabled={isRefreshing}
-                className="inline-flex items-center space-x-1.5 px-3 py-1.5 text-xs font-semibold rounded-md bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-sm transition-colors disabled:opacity-50 cursor-pointer"
-                title="比對與讀取 Google 試算表資料庫歷史期別"
-              >
-                <Database className="w-3.5 h-3.5 text-emerald-600" />
-                <span>比對試算表資料庫</span>
-              </button>
-            )}
+          <div className="flex items-center space-x-2 flex-wrap sm:flex-nowrap">
+            {/* 上傳資料 */}
+            <button
+              onClick={onUploadToSheets}
+              disabled={isRefreshing}
+              className="inline-flex items-center space-x-1.5 px-3 py-1.5 text-xs font-bold rounded-md bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs transition-colors disabled:opacity-50 cursor-pointer"
+              title="目前網頁資料上傳到試算表"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              <span>上傳資料</span>
+            </button>
 
+            {/* 下載資料 */}
+            <button
+              onClick={onDownloadFromSheets}
+              disabled={isRefreshing}
+              className="inline-flex items-center space-x-1.5 px-3 py-1.5 text-xs font-bold rounded-md bg-blue-600 hover:bg-blue-700 text-white shadow-2xs transition-colors disabled:opacity-50 cursor-pointer"
+              title="試算表資料下載到網頁"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>下載資料</span>
+            </button>
+
+            {/* 資料庫時間 */}
+            <div
+              className="inline-flex items-center space-x-1.5 px-3 py-1.5 text-xs font-semibold rounded-md bg-slate-100 text-slate-700 border border-slate-200 shadow-2xs"
+              title="資料庫時間"
+            >
+              <Clock className="w-3.5 h-3.5 text-slate-500" />
+              <span>
+                資料庫時間：<strong className="font-mono text-slate-900">{sheetsLastUpdated}</strong>
+              </span>
+            </div>
+
+            {/* 每日更新 */}
             <button
               onClick={onRefreshAll}
               disabled={isRefreshing}
               className="inline-flex items-center space-x-1.5 px-3 py-1.5 text-xs font-semibold rounded-md bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 shadow-sm transition-colors disabled:opacity-50 cursor-pointer"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-blue-600' : 'text-slate-500'}`} />
-              <span>{isRefreshing ? '擷取中...' : '每日更新 (08:00 & 18:00)'}</span>
+              <span>{isRefreshing ? '擷取中...' : '每日更新'}</span>
             </button>
           </div>
         </div>

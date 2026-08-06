@@ -595,9 +595,15 @@ export async function fetchAndUpdateLiveStockPrices(funds: FundData[]): Promise<
  */
 export async function pushAppDataToSheets(
   funds: FundData[],
-  webAppUrl?: string
+  webAppUrl?: string,
+  uploadedAt?: string
 ): Promise<{ success: boolean; message?: string }> {
   const defaultWebAppUrl = webAppUrl || 'https://script.google.com/macros/s/AKfycbyAPZfZYLT1Igoo1BRAc6GDdvUcWYTV9HubJVQOGjK1NHqNsjSCpnR0kH4VCgM_6xMm/exec';
+
+  const uploadTimestamp = uploadedAt || new Date().toLocaleString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).replace(/-/g, '/');
+  try {
+    localStorage.setItem('db_last_uploaded_time', uploadTimestamp);
+  } catch (e) {}
 
   const fundDataList = funds.map((fund) => {
     const activeSnap = fund.snapshots[0];
@@ -623,6 +629,7 @@ export async function pushAppDataToSheets(
       body: JSON.stringify({
         webAppUrl: defaultWebAppUrl,
         fundDataList,
+        uploadedAt: uploadTimestamp,
       }),
     });
     const result = await pushRes.json();

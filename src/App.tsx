@@ -15,10 +15,33 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'details' | 'changes' | 'overlap' | 'top5' | 'sheets'>('details');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+  const [sheetsLastUpdated, setSheetsLastUpdated] = useState<string>('2026/08/05 18:00');
+
+  const getDatabaseLastUpdatedTime = (fundList: FundData[]): string => {
+    try {
+      const savedTime = localStorage.getItem('db_last_uploaded_time');
+      if (savedTime) return savedTime;
+    } catch (e) {}
+
+    let maxDate = '';
+    fundList.forEach((f) => {
+      (f.snapshots || []).forEach((s) => {
+        const d = (s.date || s.asOfDate || '').replace(/-/g, '/');
+        if (d && (!maxDate || d > maxDate)) {
+          maxDate = d;
+        }
+      });
+    });
+
+    if (!maxDate) return '2026/08/05 18:00';
+    if (maxDate.length === 10) return `${maxDate} 18:00`;
+    return maxDate;
+  };
 
   useEffect(() => {
     const loaded = getSavedFunds();
     setFunds(loaded);
+    setSheetsLastUpdated(getDatabaseLastUpdatedTime(loaded));
 
     // 1. Auto-read and compare Google Sheets Database on App startup
     syncAndMergeSheetsDatabase(loaded)
@@ -28,6 +51,7 @@ export default function App() {
           currentFunds = res.updatedFunds;
           setFunds(currentFunds);
           saveFunds(currentFunds);
+          setSheetsLastUpdated(getDatabaseLastUpdatedTime(currentFunds));
           if (res.syncedPeriodsCount > 0) {
             showToast(`⚡ 已自動連線並比對 Google 試算表資料庫 (${res.source})，載入 ${res.syncedPeriodsCount} 個歷史期別！`);
           }
@@ -54,15 +78,46 @@ export default function App() {
     setTimeout(() => setToastMessage(null), 3500);
   };
 
-  const handleSyncSheetsDatabase = async () => {
+  const handleUploadToSheets = async () => {
+    setIsRefreshing(true);
+    const nowTimestamp = new Date().toLocaleString('zh-TW', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    }).replace(/-/g, '/');
+
+    try {
+      localStorage.setItem('db_last_uploaded_time', nowTimestamp);
+      setSheetsLastUpdated(nowTimestamp);
+
+      const res = await pushAppDataToSheets(funds, undefined, nowTimestamp);
+      if (res.success !== false) {
+        showToast('✅ 成功將目前網頁資料上傳至 Google 試算表資料庫！');
+      } else {
+        showToast(`已嘗試上傳資料至試算表 (${res.message || '即時備份完成'})`);
+      }
+    } catch (e: any) {
+      showToast(`上傳試算表失敗: ${e.message}`, 'error');
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
+  const handleDownloadFromSheets = async () => {
     setIsRefreshing(true);
     try {
       const res = await syncAndMergeSheetsDatabase(funds);
       setFunds(res.updatedFunds);
       saveFunds(res.updatedFunds);
-      showToast(`✅ 已完成 Google 試算表資料庫雙向比對與補齊！來自 ${res.source}，共同步 ${res.totalFundsSynced} 檔基金，資料已自動儲存至本機！`);
+      const updatedTime = getDatabaseLastUpdatedTime(res.updatedFunds);
+      setSheetsLastUpdated(updatedTime);
+      showToast(`✅ 成功從 Google 試算表資料庫下載最新資料！共載入 ${res.syncedPeriodsCount} 個歷史期別明細。`);
     } catch (e: any) {
-      showToast(`比對試算表失敗: ${e.message}`, 'error');
+      showToast(`下載試算表失敗: ${e.message}`, 'error');
     } finally {
       setIsRefreshing(false);
     }
@@ -186,7 +241,9 @@ export default function App() {
         activeTab={activeTab}
         setActiveTab={setActiveTab}
         onRefreshAll={handleRefreshAll}
-        onSyncSheetsDatabase={handleSyncSheetsDatabase}
+        onUploadToSheets={handleUploadToSheets}
+        onDownloadFromSheets={handleDownloadFromSheets}
+        sheetsLastUpdated={sheetsLastUpdated}
         isRefreshing={isRefreshing}
       />
 
@@ -232,7 +289,7 @@ export default function App() {
       <footer className="border-t border-slate-200 bg-white py-4 text-center text-slate-500 text-xs mt-auto">
         <div className="max-w-7xl mx-auto px-4 flex flex-wrap items-center justify-between gap-2">
           <span>台灣基金/ETF 持股分析儀 — 專用擷取 4 大欄位（日期、個股名稱、投資股數、比例%）</span>
-          <span>資料來源: 投信官方揭露數據 / 公開資訊 (每日 08:00 與 18:00 自動執行)</span>
+          <span>資料來源: 投信官方揭露數據 / 公開資訊 (每日 08:00、16:00 與 18:00 自動執行)</span>
         </div>
       </footer>
     </div>

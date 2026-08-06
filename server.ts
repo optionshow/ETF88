@@ -79,10 +79,10 @@ async function executeAutoScrapeAll() {
   return results;
 }
 
-// Automated twice-daily scheduled task: 08:00 and 18:00 (Asia/Taipei)
+// Automated scheduled task: 08:00, 16:00 and 18:00 (Asia/Taipei)
 const TRACKED_CODES = ["00981A.TW", "00403A.TW", "00982A.TW", "00992A.TW", "00407A.TW"];
 
-cron.schedule("0 8,18 * * *", async () => {
+cron.schedule("0 8,16,18 * * *", async () => {
   await executeAutoScrapeAll();
 }, {
   timezone: "Asia/Taipei"
@@ -102,7 +102,7 @@ app.get("/api/scrape-all", async (req, res) => {
 app.get("/api/cron-status", (req, res) => {
   res.json({
     active: true,
-    schedules: ["08:00 AM (Asia/Taipei)", "06:00 PM / 18:00 (Asia/Taipei)"],
+    schedules: ["08:00 AM (Asia/Taipei)", "04:00 PM / 16:00 (Asia/Taipei)", "06:00 PM / 18:00 (Asia/Taipei)"],
     timezone: "Asia/Taipei",
     trackedFunds: TRACKED_CODES,
   });
@@ -682,7 +682,7 @@ app.post("/api/export-csv", (req, res) => {
         const cleanName = `"${(item.stockName || "").replace(/"/g, '""')}"`;
         const priceVal = item.price ? item.price : "-";
         const mv = item.marketValue || (item.price && item.shares ? item.price * item.shares : 0);
-        const mvVal = mv > 0 ? `${(mv / 10000).toFixed(2)} 萬` : "-";
+        const mvVal = mv > 0 ? `${Math.round(mv / 10000)} 萬` : "-";
         csv += `${item.date || ""},${cleanName},${priceVal},${mvVal},${item.shares || 0},${item.ratio || 0}%\n`;
       });
     }
@@ -1032,7 +1032,7 @@ function doPost(e) {
         var priceDisplay = h.price ? Number(h.price) : "-";
         var sharesNum = Number(h.shares) || 0;
         var mv = h.marketValue || (h.price ? (Number(h.price) * sharesNum) : 0);
-        var mvDisplay = mv > 0 ? (mv / 10000).toFixed(2) + " 萬" : "-";
+        var mvDisplay = mv > 0 ? Math.round(mv / 10000) + " 萬" : "-";
         var ratioFormatted = parseAndFormatRatio(h.ratio);
 
         return [
@@ -1105,7 +1105,7 @@ function doPost(e) {
 }
 
 /**
- * 2️⃣ 建立每日 08:00 自動執行觸發器
+ * 2️⃣ 建立每日 08:00、16:00 與 18:00 自動執行觸發器
  */
 function setupDailyTrigger() {
   var triggers = ScriptApp.getProjectTriggers();
@@ -1119,7 +1119,17 @@ function setupDailyTrigger() {
     .everyDays(1)
     .atHour(8)
     .create();
-  Logger.log("✅ 已成功註冊每日 08:00 自動排程觸發器！");
+  ScriptApp.newTrigger("updateFundDetails")
+    .timeBased()
+    .everyDays(1)
+    .atHour(16)
+    .create();
+  ScriptApp.newTrigger("updateFundDetails")
+    .timeBased()
+    .everyDays(1)
+    .atHour(18)
+    .create();
+  Logger.log("✅ 已成功註冊每日 08:00、16:00 與 18:00 自動排程觸發器！");
 }
 
 /**
@@ -1279,17 +1289,19 @@ function updateFundDetails() {
 
 // API: Proxy APP push payload directly to Google Apps Script Web App Endpoint
 app.post("/api/push-app-data-to-sheets", async (req, res) => {
-  const { webAppUrl, fundDataList } = req.body;
+  const { webAppUrl, fundDataList, uploadedAt } = req.body;
 
   if (!webAppUrl) {
     return res.status(400).json({ error: "請提供 Google Apps Script Web App URL" });
   }
 
+  const nowTime = uploadedAt || new Date().toLocaleString("zh-TW", { timeZone: "Asia/Taipei" });
+
   try {
     const response = await fetch(webAppUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fundDataList }),
+      body: JSON.stringify({ fundDataList, uploadedAt: nowTime }),
     });
 
     const resultText = await response.text();
@@ -1300,7 +1312,7 @@ app.post("/api/push-app-data-to-sheets", async (req, res) => {
       resultJson = { raw: resultText };
     }
 
-    return res.json({ success: true, message: "成功由 APP 將持股明細推送至 Google 試算表！", result: resultJson });
+    return res.json({ success: true, message: "成功由 APP 將持股明細推送至 Google 試算表！", uploadedAt: nowTime, result: resultJson });
   } catch (err: any) {
     return res.status(500).json({ error: "推送至 Google 試算表失敗: " + err.message });
   }
