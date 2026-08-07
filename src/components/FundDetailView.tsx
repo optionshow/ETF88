@@ -65,6 +65,7 @@ export const FundDetailView: React.FC<FundDetailViewProps> = ({
   const [sortField, setSortField] = useState<'ratio' | 'shares' | 'stockName' | 'price' | 'marketValue'>('ratio');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [selectedSnapshotIndex, setSelectedSnapshotIndex] = useState(0);
+  const [hasFetchedPrices, setHasFetchedPrices] = useState(false);
 
   const currentFund = funds.find((f) => f.id === selectedFundId) || funds[0];
 
@@ -73,6 +74,13 @@ export const FundDetailView: React.FC<FundDetailViewProps> = ({
 
   const [selectedTargetDate, setSelectedTargetDate] = useState(activeDate);
   const [manualText, setManualText] = useState('');
+
+  const handleFetchStockPricesClick = async () => {
+    if (onFetchStockPrices) {
+      await onFetchStockPrices();
+      setHasFetchedPrices(true);
+    }
+  };
 
   // Update target date when selected snapshot changes
   useEffect(() => {
@@ -90,6 +98,10 @@ export const FundDetailView: React.FC<FundDetailViewProps> = ({
   }
 
   const rawHoldings: HoldingItem[] = activeSnapshot?.holdings || [];
+  const isDisplayingLatestStockPrices =
+    hasFetchedPrices ||
+    (rawHoldings.length > 0 &&
+      rawHoldings.every((h) => typeof h.price === 'number' && h.price > 0));
   const todayObj = new Date();
   const todayStr = `${todayObj.getFullYear()}/${String(todayObj.getMonth() + 1).padStart(2, '0')}/${String(todayObj.getDate()).padStart(2, '0')}`;
   const businessDayOptions = getBusinessDayOptions(activeDate).filter((d) => d <= todayStr);
@@ -249,9 +261,9 @@ export const FundDetailView: React.FC<FundDetailViewProps> = ({
           </div>
 
           <div className="flex items-center space-x-3">
-            {onFetchStockPrices && (
+            {!isDisplayingLatestStockPrices && onFetchStockPrices && (
               <button
-                onClick={onFetchStockPrices}
+                onClick={handleFetchStockPricesClick}
                 disabled={isRefreshing}
                 className="inline-flex items-center space-x-1.5 px-3 py-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 rounded-md shadow-sm transition-colors cursor-pointer"
               >

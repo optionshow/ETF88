@@ -19,6 +19,7 @@ interface NavbarProps {
   onDownloadFromSheets: () => void;
   sheetsLastUpdated: string;
   isRefreshing: boolean;
+  hasTodayData?: boolean;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -29,6 +30,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onDownloadFromSheets,
   sheetsLastUpdated,
   isRefreshing,
+  hasTodayData = false,
 }) => {
   return (
     <header className="bg-white border-b border-slate-200 text-slate-900 sticky top-0 z-40 shadow-sm">
@@ -88,15 +90,17 @@ export const Navbar: React.FC<NavbarProps> = ({
               </span>
             </div>
 
-            {/* 每日更新 */}
-            <button
-              onClick={onRefreshAll}
-              disabled={isRefreshing}
-              className="inline-flex items-center space-x-1.5 px-3 py-1.5 text-xs font-semibold rounded-md bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 shadow-sm transition-colors disabled:opacity-50 cursor-pointer"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-blue-600' : 'text-slate-500'}`} />
-              <span>{isRefreshing ? '擷取中...' : '每日更新'}</span>
-            </button>
+            {/* 每日更新 (若持股明細日期的日期是今天日期，隱藏每日更新按鈕) */}
+            {!hasTodayData && (
+              <button
+                onClick={onRefreshAll}
+                disabled={isRefreshing}
+                className="inline-flex items-center space-x-1.5 px-3 py-1.5 text-xs font-semibold rounded-md bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 shadow-sm transition-colors disabled:opacity-50 cursor-pointer"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-blue-600' : 'text-slate-500'}`} />
+                <span>{isRefreshing ? '擷取中...' : '每日更新'}</span>
+              </button>
+            )}
           </div>
         </div>
 

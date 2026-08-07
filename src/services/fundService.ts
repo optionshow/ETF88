@@ -31,6 +31,29 @@ export function normalizeDateString(str: string): string {
   return clean;
 }
 
+export function isTodayDate(dateStr?: string | null): boolean {
+  if (!dateStr) return false;
+  const norm = normalizeDateString(dateStr);
+  const today = new Date();
+  const y = today.getFullYear();
+  const m = String(today.getMonth() + 1).padStart(2, '0');
+  const d = String(today.getDate()).padStart(2, '0');
+
+  const todayStr1 = `${y}/${m}/${d}`;
+  const todayStr2 = `${y}/${today.getMonth() + 1}/${today.getDate()}`;
+
+  return norm === todayStr1 || norm === todayStr2 || norm.startsWith(todayStr1) || norm.startsWith(todayStr2);
+}
+
+export function isFundsTodayData(funds: FundData[]): boolean {
+  if (!funds || funds.length === 0) return false;
+  return funds.some((f) => {
+    if (isTodayDate(f.asOfDate)) return true;
+    if (f.snapshots && f.snapshots.some((s) => isTodayDate(s.date || s.asOfDate))) return true;
+    return false;
+  });
+}
+
 function cleanFundName(name: string, code: string): string {
   if (!name) return name;
   let clean = name;

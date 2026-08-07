@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { FundData } from './types';
-import { getSavedFunds, saveFunds, fetchLiveFundData, syncAndMergeSheetsDatabase, fetchAndUpdateLiveStockPrices, pushAppDataToSheets } from './services/fundService';
+import { getSavedFunds, saveFunds, fetchLiveFundData, syncAndMergeSheetsDatabase, fetchAndUpdateLiveStockPrices, pushAppDataToSheets, isFundsTodayData } from './services/fundService';
 import { Navbar } from './components/Navbar';
 import { FundDetailView } from './components/FundDetailView';
 import { HoldingChangesView } from './components/HoldingChangesView';
@@ -43,7 +43,13 @@ export default function App() {
     setFunds(loaded);
     setSheetsLastUpdated(getDatabaseLastUpdatedTime(loaded));
 
-    // 1. Auto-read and compare Google Sheets Database on App startup
+    // 若網頁持股明細日期的日期是今天日期，表示持股內容已經是最新：停止自動更新、停止自動擷取、停止由試算表下載
+    if (isFundsTodayData(loaded)) {
+      console.log('[Auto-Check] 網頁持股明細日期的日期是今天日期，持股內容已經是最新。已停止自動更新，停止自動擷取，停止由試算表下載。');
+      return;
+    }
+
+    // 否則，自動連線試算表並檢查
     syncAndMergeSheetsDatabase(loaded)
       .then((res) => {
         let currentFunds = loaded;
@@ -63,22 +69,8 @@ export default function App() {
           setSheetsLastUpdated(res.latestUploadTime);
         }
 
-        // 2. Check if today's date snapshot is missing in funds
-        const today = new Date();
-        const y = today.getFullYear();
-        const m = String(today.getMonth() + 1).padStart(2, '0');
-        const d = String(today.getDate()).padStart(2, '0');
-        const todayStr1 = `${y}/${m}/${d}`;
-        const todayStr2 = `${y}/${today.getMonth() + 1}/${today.getDate()}`;
-
-        const hasTodayData = currentFunds.some((f) =>
-          (f.snapshots || []).some((s) => {
-            const sDate = (s.date || s.asOfDate || '').replace(/-/g, '/').trim();
-            return sDate === todayStr1 || sDate === todayStr2;
-          })
-        );
-
-        if (!hasTodayData) {
+        // 檢查試算表同步後是否包含今天資料
+        if (!isFundsTodayData(currentFunds)) {
           console.log('[Auto-Check] Today data missing, auto-fetching live fund holdings...');
           handleRefreshAll();
         } else {
@@ -302,6 +294,8 @@ export default function App() {
     return false;
   };
 
+  const hasTodayData = isFundsTodayData(funds);
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-blue-600 selection:text-white flex flex-col">
       {/* Toast Notification */}
@@ -333,6 +327,7 @@ export default function App() {
         onDownloadFromSheets={handleDownloadFromSheets}
         sheetsLastUpdated={sheetsLastUpdated}
         isRefreshing={isRefreshing}
+        hasTodayData={hasTodayData}
       />
 
       {/* Main Application Canvas */}
