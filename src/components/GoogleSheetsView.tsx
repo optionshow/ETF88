@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { FundData } from '../types';
-import { FileSpreadsheet, Copy, Check, Download, ExternalLink, Code, Clock, RefreshCw, Trash2, Zap, Database, Calendar, Eye, Layers } from 'lucide-react';
-import { syncAndMergeSheetsDatabase, normalizeDateString } from '../services/fundService';
+import { FileSpreadsheet, Copy, Check, Download, ExternalLink, Code, Clock, RefreshCw, Trash2, Zap, Database, Calendar, Eye, Layers, Upload } from 'lucide-react';
+import { syncAndMergeSheetsDatabase, pushAppDataToSheets, normalizeDateString } from '../services/fundService';
 import { generateGoogleScript } from '../utils/googleScriptGenerator';
 
 interface GoogleSheetsViewProps {
@@ -19,6 +19,7 @@ export const GoogleSheetsView: React.FC<GoogleSheetsViewProps> = ({ funds, onUpd
   const [isTesting, setIsTesting] = useState<boolean>(false);
   const [testStatusMsg, setTestStatusMsg] = useState<string>('');
   const [isReadingDb, setIsReadingDb] = useState<boolean>(false);
+  const [isPushingDb, setIsPushingDb] = useState<boolean>(false);
   const [dbReadStatus, setDbReadStatus] = useState<string>('');
   const [selectedFundCodeForPeriod, setSelectedFundCodeForPeriod] = useState<string>('00981A.TW');
   const [selectedPeriodDate, setSelectedPeriodDate] = useState<string>('');
@@ -146,6 +147,23 @@ export const GoogleSheetsView: React.FC<GoogleSheetsViewProps> = ({ funds, onUpd
       setDbReadStatus(`❌ 讀取資料庫失敗: ${e.message}`);
     } finally {
       setIsReadingDb(false);
+    }
+  };
+
+  const handlePushDatabase = async () => {
+    setIsPushingDb(true);
+    setDbReadStatus('正在將網頁記憶體中的精確持股資料（包含 8/6 等所有歷史期別）寫入覆蓋至 Google 試算表...');
+    try {
+      const res = await pushAppDataToSheets(funds, webAppUrl);
+      if (res.success) {
+        setDbReadStatus('✅ 上傳成功！已成功將網頁精確資料（包含 8/6 等所有歷史期別）覆蓋寫入至 Google 試算表！');
+      } else {
+        setDbReadStatus(`⚠️ 上傳失敗或提醒: ${res.message || '請確認 Web App URL 權限已設為所有人'}`);
+      }
+    } catch (e: any) {
+      setDbReadStatus(`❌ 上傳試算表失敗: ${e.message}`);
+    } finally {
+      setIsPushingDb(false);
     }
   };
 
@@ -319,14 +337,25 @@ export const GoogleSheetsView: React.FC<GoogleSheetsViewProps> = ({ funds, onUpd
             </div>
           </div>
 
-          <button
-            onClick={handleReadDatabase}
-            disabled={isReadingDb}
-            className="inline-flex items-center space-x-2 px-4 py-2 bg-slate-900 hover:bg-slate-800 disabled:bg-slate-300 text-white text-xs font-bold rounded-md transition-colors shadow-sm cursor-pointer"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${isReadingDb ? 'animate-spin text-emerald-400' : 'text-slate-300'}`} />
-            <span>{isReadingDb ? '正在讀取試算表...' : '🔄 立即讀取/比對試算表資料庫'}</span>
-          </button>
+          <div className="flex items-center space-x-2 flex-wrap gap-2">
+            <button
+              onClick={handlePushDatabase}
+              disabled={isPushingDb || isReadingDb}
+              className="inline-flex items-center space-x-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-300 text-white text-xs font-bold rounded-md transition-colors shadow-sm cursor-pointer"
+            >
+              <Upload className={`w-3.5 h-3.5 ${isPushingDb ? 'animate-spin' : ''}`} />
+              <span>{isPushingDb ? '正在覆蓋上傳...' : '📤 覆蓋上傳網頁正確資料至試算表'}</span>
+            </button>
+
+            <button
+              onClick={handleReadDatabase}
+              disabled={isReadingDb || isPushingDb}
+              className="inline-flex items-center space-x-2 px-4 py-2 bg-slate-900 hover:bg-slate-800 disabled:bg-slate-300 text-white text-xs font-bold rounded-md transition-colors shadow-sm cursor-pointer"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isReadingDb ? 'animate-spin text-emerald-400' : 'text-slate-300'}`} />
+              <span>{isReadingDb ? '正在讀取試算表...' : '🔄 立即讀取/比對試算表資料庫'}</span>
+            </button>
+          </div>
         </div>
 
         {dbReadStatus && (

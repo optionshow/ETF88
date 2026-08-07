@@ -642,21 +642,43 @@ export async function pushAppDataToSheets(
     localStorage.setItem('db_last_uploaded_time', uploadTimestamp);
   } catch (e) {}
 
-  const fundDataList = funds.map((fund) => {
-    const activeSnap = fund.snapshots[0];
-    return {
-      code: fund.code,
-      asOfDate: normalizeDateString(activeSnap?.asOfDate || fund.asOfDate || '2026/08/03'),
-      holdings: (activeSnap?.holdings || []).map((h) => ({
-        stockName: h.stockName,
-        stockCode: h.stockCode,
-        price: h.price || 0,
-        marketValue: Math.round(h.marketValue || ((h.price || 0) * h.shares)),
-        shares: h.shares,
-        sharesFormatted: h.sharesFormatted || h.shares.toLocaleString(),
-        ratio: h.ratio,
-      })),
-    };
+  const fundDataList: any[] = [];
+  funds.forEach((fund) => {
+    if (fund.snapshots && fund.snapshots.length > 0) {
+      fund.snapshots.forEach((snap) => {
+        const snapHoldings = snap.holdings || [];
+        if (snapHoldings.length > 0) {
+          fundDataList.push({
+            code: fund.code,
+            asOfDate: normalizeDateString(snap.asOfDate || snap.date || fund.asOfDate || '2026/08/03'),
+            holdings: snapHoldings.map((h) => ({
+              stockName: h.stockName,
+              stockCode: h.stockCode,
+              price: h.price || 0,
+              marketValue: Math.round(h.marketValue || ((h.price || 0) * h.shares)),
+              shares: h.shares,
+              sharesFormatted: h.sharesFormatted || h.shares.toLocaleString(),
+              ratio: h.ratio,
+            })),
+          });
+        }
+      });
+    } else {
+      const holdings = fund.holdings || [];
+      fundDataList.push({
+        code: fund.code,
+        asOfDate: normalizeDateString(fund.asOfDate || '2026/08/03'),
+        holdings: holdings.map((h) => ({
+          stockName: h.stockName,
+          stockCode: h.stockCode,
+          price: h.price || 0,
+          marketValue: Math.round(h.marketValue || ((h.price || 0) * h.shares)),
+          shares: h.shares,
+          sharesFormatted: h.sharesFormatted || h.shares.toLocaleString(),
+          ratio: h.ratio,
+        })),
+      });
+    }
   });
 
   try {
