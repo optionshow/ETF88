@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { FundData } from '../types';
 import { FileSpreadsheet, Copy, Check, Download, ExternalLink, Code, Clock, RefreshCw, Trash2, Zap, Database, Calendar, Eye, Layers } from 'lucide-react';
 import { syncAndMergeSheetsDatabase, normalizeDateString } from '../services/fundService';
+import { generateGoogleScript } from '../utils/googleScriptGenerator';
 
 interface GoogleSheetsViewProps {
   funds: FundData[];
@@ -13,7 +14,6 @@ const DEFAULT_WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyAPZfZYLT1
 
 export const GoogleSheetsView: React.FC<GoogleSheetsViewProps> = ({ funds, onUpdateFunds }) => {
   const [copied, setCopied] = useState(false);
-  const [scriptCode, setScriptCode] = useState<string>('');
   const [spreadsheetId] = useState<string>(DEFAULT_SPREADSHEET_ID);
   const [webAppUrl] = useState<string>(DEFAULT_WEB_APP_URL);
   const [isTesting, setIsTesting] = useState<boolean>(false);
@@ -22,16 +22,33 @@ export const GoogleSheetsView: React.FC<GoogleSheetsViewProps> = ({ funds, onUpd
   const [dbReadStatus, setDbReadStatus] = useState<string>('');
   const [selectedFundCodeForPeriod, setSelectedFundCodeForPeriod] = useState<string>('00981A.TW');
   const [selectedPeriodDate, setSelectedPeriodDate] = useState<string>('');
-  const [selectedFundCodes, setSelectedFundCodes] = useState<string[]>(
-    funds.map((f) => f.code)
-  );
+  const [selectedFundCodes, setSelectedFundCodes] = useState<string[]>(() => {
+    return funds.length > 0 ? funds.map((f) => f.code) : ["00981A.TW", "00982A.TW", "00407A.TW", "ACPS09", "ACDD04", "ACPS10"];
+  });
+
+  const [scriptCode, setScriptCode] = useState<string>(() => {
+    const codes = selectedFundCodes.length > 0 ? selectedFundCodes : funds.map((f) => f.code);
+    return generateGoogleScript(codes, DEFAULT_SPREADSHEET_ID);
+  });
+
+  // Sync selected fund codes when funds list changes
+  useEffect(() => {
+    if (funds.length > 0 && selectedFundCodes.length === 0) {
+      setSelectedFundCodes(funds.map((f) => f.code));
+    }
+  }, [funds]);
 
   useEffect(() => {
-    // Generate script code dynamically based on funds and spreadsheet ID
+    const targetCodes = selectedFundCodes.length > 0 ? selectedFundCodes : funds.map((f) => f.code);
+    // Immediately set client-generated script so it is never blank/missing
+    const clientScript = generateGoogleScript(targetCodes, spreadsheetId);
+    setScriptCode(clientScript);
+
+    // Also attempt server fetch if API is available
     fetch('/api/generate-google-script', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fundCodes: selectedFundCodes, spreadsheetId }),
+      body: JSON.stringify({ fundCodes: targetCodes, spreadsheetId }),
     })
       .then(async (res) => {
         const text = await res.text();
@@ -42,12 +59,12 @@ export const GoogleSheetsView: React.FC<GoogleSheetsViewProps> = ({ funds, onUpd
         }
       })
       .then((data) => {
-        if (data && data.success) {
+        if (data && data.success && data.script) {
           setScriptCode(data.script);
         }
       })
-      .catch((err) => console.error('Error generating script:', err));
-  }, [selectedFundCodes, spreadsheetId]);
+      .catch((err) => console.error('Error generating script from API:', err));
+  }, [selectedFundCodes, spreadsheetId, funds]);
 
   const handleTestConnection = async () => {
     if (!webAppUrl.trim()) {

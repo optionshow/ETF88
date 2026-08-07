@@ -5,6 +5,7 @@ import * as cheerio from "cheerio";
 import cron from "node-cron";
 import iconv from "iconv-lite";
 import { createServer as createViteServer } from "vite";
+import { generateGoogleScript } from "./src/utils/googleScriptGenerator";
 
 const app = express();
 const PORT = 3000;
