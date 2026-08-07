@@ -623,5 +623,16 @@ function updateFundDetails() {
     }
   });
 }
+
+/**
+ * 💡 別名涵式 (供不同命名習慣點選執行)
+ */
+function autoFetchAndSyncAllFunds() {
+  updateFundDetails();
+}
+
+function autoUpdateAllFunds() {
+  updateFundDetails();
+}
 `;
 }
