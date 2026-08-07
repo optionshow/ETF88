@@ -64,14 +64,25 @@ export default function App() {
         }
 
         // 2. Check if today's date snapshot is missing in funds
-        const todayStr = new Date().toLocaleDateString('zh-TW', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/-/g, '/');
+        const today = new Date();
+        const y = today.getFullYear();
+        const m = String(today.getMonth() + 1).padStart(2, '0');
+        const d = String(today.getDate()).padStart(2, '0');
+        const todayStr1 = `${y}/${m}/${d}`;
+        const todayStr2 = `${y}/${today.getMonth() + 1}/${today.getDate()}`;
+
         const hasTodayData = currentFunds.some((f) =>
-          (f.snapshots || []).some((s) => (s.date || s.asOfDate) === todayStr)
+          (f.snapshots || []).some((s) => {
+            const sDate = (s.date || s.asOfDate || '').replace(/-/g, '/').trim();
+            return sDate === todayStr1 || sDate === todayStr2;
+          })
         );
 
         if (!hasTodayData) {
           console.log('[Auto-Check] Today data missing, auto-fetching live fund holdings...');
           handleRefreshAll();
+        } else {
+          console.log('[Auto-Check] Today data already present in Google Sheets, skipped web scraping.');
         }
       })
       .catch((err) => {
@@ -131,50 +142,96 @@ export default function App() {
 
   const handleRefreshAll = async () => {
     setIsRefreshing(true);
-    let updatedCount = 0;
-    const currentSaved = getSavedFunds();
-    const newFundsList = [...currentSaved];
-
-    // 1. Execute COMPLETE live auto-scraping for ALL funds according to AGENTS.md protocol
-    for (let i = 0; i < newFundsList.length; i++) {
-      const fund = newFundsList[i];
-      const res = await fetchLiveFundData(fund.code);
-      if (res) {
-        newFundsList[i] = res;
-        updatedCount++;
-      }
-    }
-
-    // 2. Synchronously fetch and apply latest live stock prices for all holdings
-    let listWithPrices = newFundsList;
     try {
-      listWithPrices = await fetchAndUpdateLiveStockPrices(newFundsList);
-    } catch (err) {
-      console.warn('Auto stock price update failed during refreshAll:', err);
-    }
+      const currentSaved = getSavedFunds();
 
-    // 3. Immediately persist freshly scraped funds and stock prices
-    setFunds(listWithPrices);
-    saveFunds(listWithPrices);
-
-    // 4. Bidirectionally merge with Google Sheets passing fresh dataset
-    try {
-      const sheetsSync = await syncAndMergeSheetsDatabase(listWithPrices);
-      let finalSynced = sheetsSync.updatedFunds;
+      // 1. 先嘗試從 Google 試算表資料庫讀取並同步最新歷史期別
+      let sheetsSyncedFunds = currentSaved;
       try {
-        finalSynced = await fetchAndUpdateLiveStockPrices(finalSynced);
+        const sheetsSync = await syncAndMergeSheetsDatabase(currentSaved);
+        if (sheetsSync && sheetsSync.updatedFunds && sheetsSync.updatedFunds.length > 0) {
+          sheetsSyncedFunds = sheetsSync.updatedFunds;
+          if (sheetsSync.latestUploadTime) {
+            setSheetsLastUpdated(sheetsSync.latestUploadTime);
+          } else {
+            setSheetsLastUpdated(getDatabaseLastUpdatedTime(sheetsSyncedFunds));
+          }
+        }
       } catch (e) {
-        console.warn('Post-sheets sync stock price update failed:', e);
+        console.warn('Syncing with Google Sheets database failed prior to refresh:', e);
       }
-      setFunds(finalSynced);
-      saveFunds(finalSynced);
 
-      // 5. Actively push APP's exact scraped data to overwrite Google Sheets database
-      pushAppDataToSheets(finalSynced).catch((e) => console.warn('Push app data to sheets warning:', e));
+      // 2. 檢查 Google 試算表資料中是否已包含「今日」最新持股明細
+      const today = new Date();
+      const y = today.getFullYear();
+      const m = String(today.getMonth() + 1).padStart(2, '0');
+      const d = String(today.getDate()).padStart(2, '0');
+      const todayStr1 = `${y}/${m}/${d}`;
+      const todayStr2 = `${y}/${today.getMonth() + 1}/${today.getDate()}`;
 
-      showToast(`✅ 每日更新完成！成功自動抓取 ${updatedCount} 檔基金最新持股明細與最新個股股價，並已同步覆蓋至 Google 試算表資料庫！`);
-    } catch (e: any) {
-      showToast(`每日更新完成 (${updatedCount} 檔)，試算表同步提示: ${e.message}`);
+      const hasTodayInSheets = sheetsSyncedFunds.length > 0 && sheetsSyncedFunds.some((f) =>
+        (f.snapshots || []).some((s) => {
+          const sDate = (s.date || s.asOfDate || '').replace(/-/g, '/').trim();
+          return sDate === todayStr1 || sDate === todayStr2;
+        })
+      );
+
+      // 若 Google 試算表已有今天資料，直接下載套用並更新即時股價，無需跑爬蟲流程！
+      if (hasTodayInSheets) {
+        let finalFunds = sheetsSyncedFunds;
+        try {
+          finalFunds = await fetchAndUpdateLiveStockPrices(sheetsSyncedFunds);
+        } catch (e) {
+          console.warn('Live stock price update failed during sheets shortcut:', e);
+        }
+        setFunds(finalFunds);
+        saveFunds(finalFunds);
+        showToast('✅ Google 試算表已有今日最新資料，已直接為您下載套用，無需重新擷取！');
+        return;
+      }
+
+      // 3. 若 Google 試算表中沒有今天的資料，才執行官方網站擷取流程 (Scraping Protocol)
+      let updatedCount = 0;
+      const newFundsList = [...sheetsSyncedFunds];
+
+      for (let i = 0; i < newFundsList.length; i++) {
+        const fund = newFundsList[i];
+        const res = await fetchLiveFundData(fund.code);
+        if (res) {
+          newFundsList[i] = res;
+          updatedCount++;
+        }
+      }
+
+      // 4. 同步更新個股最新股價
+      let listWithPrices = newFundsList;
+      try {
+        listWithPrices = await fetchAndUpdateLiveStockPrices(newFundsList);
+      } catch (err) {
+        console.warn('Auto stock price update failed during refreshAll:', err);
+      }
+
+      setFunds(listWithPrices);
+      saveFunds(listWithPrices);
+
+      // 5. 將爬取到的最新資料同步覆蓋推送到 Google 試算表資料庫
+      try {
+        const sheetsSync = await syncAndMergeSheetsDatabase(listWithPrices);
+        let finalSynced = sheetsSync.updatedFunds;
+        try {
+          finalSynced = await fetchAndUpdateLiveStockPrices(finalSynced);
+        } catch (e) {
+          console.warn('Post-sheets sync stock price update failed:', e);
+        }
+        setFunds(finalSynced);
+        saveFunds(finalSynced);
+
+        pushAppDataToSheets(finalSynced).catch((e) => console.warn('Push app data to sheets warning:', e));
+
+        showToast(`✅ 每日更新完成！成功自動抓取 ${updatedCount} 檔基金最新持股明細與最新個股股價，並已同步覆蓋至 Google 試算表資料庫！`);
+      } catch (e: any) {
+        showToast(`每日更新完成 (${updatedCount} 檔)，試算表同步提示: ${e.message}`);
+      }
     } finally {
       setIsRefreshing(false);
     }
