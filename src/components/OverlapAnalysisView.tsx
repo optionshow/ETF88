@@ -61,10 +61,10 @@ export const OverlapAnalysisView: React.FC<OverlapAnalysisViewProps> = ({ funds 
           </div>
           <div>
             <h3 className="text-base font-bold text-slate-900 mb-1">
-              跨基金重複持股矩陣分析 (Cross-Fund Holding Concentration)
+              跨基金重複持股矩陣分析
             </h3>
-            <p className="text-xs text-slate-600 leading-relaxed">
-              透過自動擷取的投資明細，即時比對您追蹤的 <span className="text-blue-600 font-bold">{funds.length} 檔基金</span>（如統一奔騰、統一黑馬、安聯台科）是否集中買進相同的權值股或熱門標的。若重複持股比例過高，定期定額投資時可能產生產業與個股權重過度集中的風險。
+            <p className="text-xs text-slate-600 leading-relaxed hidden sm:block">
+              透過自動擷取的投資明細，即時比對您追蹤的 <span className="text-blue-600 font-bold">{funds.length} 檔基金</span> 是否集中買進相同的權值股或熱門標的。
             </p>
           </div>
         </div>

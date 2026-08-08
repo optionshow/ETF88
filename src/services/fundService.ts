@@ -664,7 +664,7 @@ export async function pushAppDataToSheets(
         }
       });
     } else {
-      const holdings = fund.holdings || [];
+      const holdings = (fund.snapshots && fund.snapshots[0]?.holdings) || [];
       fundDataList.push({
         code: fund.code,
         asOfDate: normalizeDateString(fund.asOfDate || '2026/08/03'),

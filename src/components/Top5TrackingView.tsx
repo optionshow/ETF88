@@ -99,13 +99,13 @@ export const Top5TrackingView: React.FC<Top5TrackingViewProps> = ({ funds }) => 
             </div>
             <div>
               <h3 className="text-base font-bold text-slate-900 mb-1 flex items-center gap-2">
-                <span>跨基金重疊個股 — 前五大追蹤 (Top 5 Holding Trend)</span>
-                <span className="bg-blue-100 text-blue-800 text-[11px] px-2 py-0.5 rounded font-mono font-bold">
+                <span>跨基金重疊個股 — 前五大追蹤</span>
+                <span className="bg-blue-100 text-blue-800 text-[11px] px-2 py-0.5 rounded font-mono font-bold hidden sm:inline">
                   整合雙縱軸走勢圖
                 </span>
               </h3>
-              <p className="text-xs text-slate-600 leading-relaxed">
-                自動整合跨基金持股集中度最高的前 5 大權值個股於同一張走勢圖：左縱軸為持股比例 (%) 線圖，右縱軸為持股市值 (萬元) 漸層底色圖。
+              <p className="text-xs text-slate-600 leading-relaxed hidden sm:block">
+                自動整合跨基金持股集中度最高的前 5 大權值個股於同一張走勢圖。
               </p>
             </div>
           </div>

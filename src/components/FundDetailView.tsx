@@ -518,8 +518,8 @@ export const FundDetailView: React.FC<FundDetailViewProps> = ({
             </div>
           </div>
 
-          {/* Manual Data Input Panel (Under Top 10 Ratios) */}
-          <div className="bg-white p-5 rounded-lg border border-slate-200 border-t-4 border-t-indigo-600 shadow-sm space-y-4">
+          {/* Manual Data Input Panel (Under Top 10 Ratios) - Hidden on mobile & tablet */}
+          <div className="hidden lg:block bg-white p-5 rounded-lg border border-slate-200 border-t-4 border-t-indigo-600 shadow-sm space-y-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
                 <Edit3 className="w-4 h-4 text-indigo-600" />

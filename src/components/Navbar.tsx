@@ -37,16 +37,16 @@ export const Navbar: React.FC<NavbarProps> = ({
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Logo & Title */}
-          <div className="flex items-center space-x-3">
-            <div className="bg-slate-900 text-white font-black text-sm px-2.5 py-1.5 rounded-md shadow-sm">
+          <div className="flex items-center space-x-2 sm:space-x-3">
+            <div className="bg-slate-900 text-white font-black text-xs sm:text-sm px-2 sm:px-2.5 py-1 sm:py-1.5 rounded-md shadow-sm">
               ETF
             </div>
-            <div>
+            <div className="hidden lg:block">
               <div className="flex items-center space-x-2">
                 <h1 className="text-lg font-bold tracking-tight text-slate-900">台灣基金持股自動化分析儀</h1>
                 <span className="bg-emerald-50 text-emerald-700 text-xs px-2.5 py-0.5 rounded-full font-semibold border border-emerald-200 flex items-center gap-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse"></span>
-                  官方持股明細同步
+                  <span>官方持股明細同步</span>
                 </span>
               </div>
               <p className="text-xs text-slate-500">
@@ -56,37 +56,37 @@ export const Navbar: React.FC<NavbarProps> = ({
           </div>
 
           {/* Action Buttons */}
-          <div className="flex items-center space-x-2 flex-wrap sm:flex-nowrap">
+          <div className="flex items-center space-x-1.5 sm:space-x-2 flex-nowrap">
             {/* 上傳資料 */}
             <button
               onClick={onUploadToSheets}
               disabled={isRefreshing}
-              className="inline-flex items-center space-x-1.5 px-3 py-1.5 text-xs font-bold rounded-md bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs transition-colors disabled:opacity-50 cursor-pointer"
+              className="inline-flex items-center space-x-1 px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-md bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs transition-colors disabled:opacity-50 cursor-pointer"
               title="目前網頁資料上傳到試算表"
             >
               <Upload className="w-3.5 h-3.5" />
-              <span>上傳資料</span>
+              <span className="hidden md:inline">上傳資料</span>
             </button>
 
             {/* 下載資料 */}
             <button
               onClick={onDownloadFromSheets}
               disabled={isRefreshing}
-              className="inline-flex items-center space-x-1.5 px-3 py-1.5 text-xs font-bold rounded-md bg-blue-600 hover:bg-blue-700 text-white shadow-2xs transition-colors disabled:opacity-50 cursor-pointer"
+              className="inline-flex items-center space-x-1 px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-md bg-blue-600 hover:bg-blue-700 text-white shadow-2xs transition-colors disabled:opacity-50 cursor-pointer"
               title="試算表資料下載到網頁"
             >
               <Download className="w-3.5 h-3.5" />
-              <span>下載資料</span>
+              <span className="hidden md:inline">下載資料</span>
             </button>
 
             {/* 資料庫時間 */}
             <div
-              className="inline-flex items-center space-x-1.5 px-3 py-1.5 text-xs font-semibold rounded-md bg-slate-100 text-slate-700 border border-slate-200 shadow-2xs"
+              className="inline-flex items-center space-x-1 px-2.5 sm:px-3 py-1.5 text-xs font-semibold rounded-md bg-slate-100 text-slate-700 border border-slate-200 shadow-2xs"
               title="資料庫時間"
             >
               <Clock className="w-3.5 h-3.5 text-slate-500" />
               <span>
-                資料庫時間：<strong className="font-mono text-slate-900">{sheetsLastUpdated}</strong>
+                <span className="hidden md:inline">資料庫時間：</span><strong className="font-mono text-slate-900">{sheetsLastUpdated}</strong>
               </span>
             </div>
 
@@ -95,10 +95,11 @@ export const Navbar: React.FC<NavbarProps> = ({
               <button
                 onClick={onRefreshAll}
                 disabled={isRefreshing}
-                className="inline-flex items-center space-x-1.5 px-3 py-1.5 text-xs font-semibold rounded-md bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 shadow-sm transition-colors disabled:opacity-50 cursor-pointer"
+                className="inline-flex items-center space-x-1 px-2.5 sm:px-3 py-1.5 text-xs font-semibold rounded-md bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 shadow-sm transition-colors disabled:opacity-50 cursor-pointer"
+                title="每日更新"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-blue-600' : 'text-slate-500'}`} />
-                <span>{isRefreshing ? '擷取中...' : '每日更新'}</span>
+                <span className="hidden md:inline">{isRefreshing ? '擷取中...' : '每日更新'}</span>
               </button>
             )}
           </div>
@@ -156,7 +157,7 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           <button
             onClick={() => setActiveTab('sheets')}
-            className={`flex items-center space-x-2 px-3.5 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap ${
+            className={`hidden lg:flex items-center space-x-2 px-3.5 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap ${
               activeTab === 'sheets'
                 ? 'bg-blue-600 text-white shadow-sm'
                 : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
