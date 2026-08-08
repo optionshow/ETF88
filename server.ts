@@ -599,7 +599,7 @@ app.post("/api/scrape-fund", async (req, res) => {
     fundName = fundName.replace(/MoneyDJ.*/g, "").replace(/基金投資明細.*/g, "").trim();
 
     // Extract date
-    let asOfDate = "2026/08/03";
+    let asOfDate = "2026/08/05";
     const bodyText = $.text();
     const dateMatch = bodyText.match(/(?:資料日期|截至日期|明細日期)[：:\s]*(\d{4}[\/\.-]\d{1,2}[\/\.-]\d{1,2})/);
     if (dateMatch) {
@@ -1621,6 +1621,19 @@ app.post("/api/read-sheets-database", async (req, res) => {
       }
     }
   }
+
+  // Sanitize resultData to strictly remove any 2026/08/03 or 08/03 period snapshots
+  resultData = resultData.map((f: any) => {
+    const cleanSnaps = (f.snapshots || []).filter((s: any) => {
+      const d = String(s.date || s.asOfDate || "");
+      return !d.includes("08/03") && !d.includes("8/3") && !d.includes("08-03");
+    });
+    return {
+      ...f,
+      snapshots: cleanSnaps,
+      periods: (f.periods || []).filter((p: string) => !p.includes("08/03") && !p.includes("8/3") && !p.includes("08-03"))
+    };
+  });
 
   return res.json({
     success: true,

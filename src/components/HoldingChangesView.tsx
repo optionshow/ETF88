@@ -72,7 +72,7 @@ export const HoldingChangesView: React.FC<HoldingChangesViewProps> = ({
     : currentFundSnapshots.map((s) => s.date || s.asOfDate);
 
   const targetLatestDate = dateOptions[latestIndex] || dateOptions[0] || '2026/08/04';
-  const targetPrevDate = dateOptions[prevIndex] || dateOptions[Math.min(1, dateOptions.length - 1)] || '2026/08/03';
+  const targetPrevDate = dateOptions[prevIndex] || dateOptions[Math.min(1, dateOptions.length - 1)] || '2026/08/05';
 
   // Compute changes for a single fund
   const computeChangesForFund = (fund: FundData): EnrichedChange[] => {

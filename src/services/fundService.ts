@@ -153,6 +153,12 @@ export function getOfficialMetadata(str: string) {
   return null;
 }
 
+export function isAug3Date(dStr?: string): boolean {
+  if (!dStr) return false;
+  const norm = normalizeDateString(dStr);
+  return norm.includes('08/03') || norm.includes('8/3') || norm.includes('08-03') || norm.includes('8-3');
+}
+
 export function deduplicateFunds(funds: FundData[]): FundData[] {
   const map = new Map<string, FundData>();
   
@@ -161,12 +167,14 @@ export function deduplicateFunds(funds: FundData[]): FundData[] {
     const official = getOfficialMetadata(rawKey) || getOfficialMetadata(f.id) || getOfficialMetadata(f.name) || getOfficialMetadata(f.url);
     const key = official?.code || rawKey;
 
-    const cleanSnapshots = (f.snapshots || []).map((s) => ({
-      ...s,
-      date: normalizeDateString(s.date || s.asOfDate),
-      asOfDate: normalizeDateString(s.asOfDate || s.date),
-      holdings: deduplicateSnapshotHoldings(s.holdings || []),
-    }));
+    const cleanSnapshots = (f.snapshots || [])
+      .filter((s) => !isAug3Date(s.date || s.asOfDate))
+      .map((s) => ({
+        ...s,
+        date: normalizeDateString(s.date || s.asOfDate),
+        asOfDate: normalizeDateString(s.asOfDate || s.date),
+        holdings: deduplicateSnapshotHoldings(s.holdings || []),
+      }));
 
     if (!map.has(key)) {
       map.set(key, {
@@ -244,7 +252,12 @@ export function getSavedFunds(): FundData[] {
           const presetMatch = INITIAL_FUNDS.find((p) => p.code.toUpperCase().trim() === codeUpper || p.code === official?.code);
 
           let snapshots = (fund.snapshots || []).filter(
-            (snap) => !snap.date?.includes('05/31') && !snap.asOfDate?.includes('05/31') && !snap.date?.includes('5/31') && !snap.asOfDate?.includes('5/31')
+            (snap) =>
+              !isAug3Date(snap.date || snap.asOfDate) &&
+              !snap.date?.includes('05/31') &&
+              !snap.asOfDate?.includes('05/31') &&
+              !snap.date?.includes('5/31') &&
+              !snap.asOfDate?.includes('5/31')
           );
 
           // If preset fund exists, ensure fresh preset snapshots overwrite stale dummy holdings
@@ -650,7 +663,7 @@ export async function pushAppDataToSheets(
         if (snapHoldings.length > 0) {
           fundDataList.push({
             code: fund.code,
-            asOfDate: normalizeDateString(snap.asOfDate || snap.date || fund.asOfDate || '2026/08/03'),
+            asOfDate: normalizeDateString(snap.asOfDate || snap.date || fund.asOfDate || '2026/08/05'),
             holdings: snapHoldings.map((h) => ({
               stockName: h.stockName,
               stockCode: h.stockCode,
@@ -667,7 +680,7 @@ export async function pushAppDataToSheets(
       const holdings = (fund.snapshots && fund.snapshots[0]?.holdings) || [];
       fundDataList.push({
         code: fund.code,
-        asOfDate: normalizeDateString(fund.asOfDate || '2026/08/03'),
+        asOfDate: normalizeDateString(fund.asOfDate || '2026/08/05'),
         holdings: holdings.map((h) => ({
           stockName: h.stockName,
           stockCode: h.stockCode,
