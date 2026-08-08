@@ -6,13 +6,12 @@ import { FundDetailView } from './components/FundDetailView';
 import { HoldingChangesView } from './components/HoldingChangesView';
 import { OverlapAnalysisView } from './components/OverlapAnalysisView';
 import { Top5TrackingView } from './components/Top5TrackingView';
-import { GoogleSheetsView } from './components/GoogleSheetsView';
 import { AlertCircle, CheckCircle2 } from 'lucide-react';
 
 export default function App() {
   const [funds, setFunds] = useState<FundData[]>([]);
   const [selectedFundId, setSelectedFundId] = useState<string>('00981A.TW');
-  const [activeTab, setActiveTab] = useState<'details' | 'changes' | 'overlap' | 'top5' | 'sheets'>('details');
+  const [activeTab, setActiveTab] = useState<'details' | 'changes' | 'overlap' | 'top5'>('details');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
   const [sheetsLastUpdated, setSheetsLastUpdated] = useState<string>('2026/08/05 18:00');
@@ -364,8 +363,6 @@ export default function App() {
         {activeTab === 'overlap' && <OverlapAnalysisView funds={funds} />}
 
         {activeTab === 'top5' && <Top5TrackingView funds={funds} />}
-
-        {activeTab === 'sheets' && <GoogleSheetsView funds={funds} onUpdateFunds={setFunds} />}
       </main>
 
       {/* Footer */}

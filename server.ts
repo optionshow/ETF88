@@ -8,7 +8,7 @@ import { createServer as createViteServer } from "vite";
 import { generateGoogleScript } from "./src/utils/googleScriptGenerator";
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 app.use(express.json());
 
@@ -1374,8 +1374,9 @@ function updateFundDetails() {
 // API: Proxy APP push payload directly to Google Apps Script Web App Endpoint
 app.post("/api/push-app-data-to-sheets", async (req, res) => {
   const { webAppUrl, fundDataList, uploadedAt } = req.body;
+  const targetWebAppUrl = (webAppUrl || process.env.GOOGLE_WEB_APP_URL || "https://script.google.com/macros/s/AKfycbyAPZfZYLT1Igoo1BRAc6GDdvUcWYTV9HubJVQOGjK1NHqNsjSCpnR0kH4VCgM_6xMm/exec").trim();
 
-  if (!webAppUrl) {
+  if (!targetWebAppUrl) {
     return res.status(400).json({ success: false, error: "請提供 Google Apps Script Web App URL" });
   }
 
@@ -1384,7 +1385,7 @@ app.post("/api/push-app-data-to-sheets", async (req, res) => {
   try {
     const requestPayload = JSON.stringify({ fundDataList: fundDataList || [], uploadedAt: nowTime });
 
-    const response = await fetch(webAppUrl, {
+    const response = await fetch(targetWebAppUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: requestPayload,
@@ -1437,8 +1438,8 @@ app.post("/api/push-app-data-to-sheets", async (req, res) => {
 // API: Read database (historical periods and holdings) from Google Apps Script / Google Sheets
 app.post("/api/read-sheets-database", async (req, res) => {
   const { webAppUrl, spreadsheetId, fundCodes } = req.body;
-  const targetSpreadsheetId = spreadsheetId || "1u4F6xNbGf2HqkwJL2kXxolEKUObzHWnMdHaGsbI5ypo";
-  const targetWebAppUrl = webAppUrl || "https://script.google.com/macros/s/AKfycbyAPZfZYLT1Igoo1BRAc6GDdvUcWYTV9HubJVQOGjK1NHqNsjSCpnR0kH4VCgM_6xMm/exec";
+  const targetSpreadsheetId = (spreadsheetId || process.env.GOOGLE_SPREADSHEET_ID || "1u4F6xNbGf2HqkwJL2kXxolEKUObzHWnMdHaGsbI5ypo").trim();
+  const targetWebAppUrl = (webAppUrl || process.env.GOOGLE_WEB_APP_URL || "https://script.google.com/macros/s/AKfycbyAPZfZYLT1Igoo1BRAc6GDdvUcWYTV9HubJVQOGjK1NHqNsjSCpnR0kH4VCgM_6xMm/exec").trim();
 
   let fetchedFromScript = false;
   let resultData: any[] = [];

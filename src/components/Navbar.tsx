@@ -1,7 +1,6 @@
 import React from 'react';
 import {
   RefreshCw,
-  FileSpreadsheet,
   Layers,
   PieChart,
   Info,
@@ -12,8 +11,8 @@ import {
 } from 'lucide-react';
 
 interface NavbarProps {
-  activeTab: 'details' | 'changes' | 'overlap' | 'top5' | 'sheets';
-  setActiveTab: (tab: 'details' | 'changes' | 'overlap' | 'top5' | 'sheets') => void;
+  activeTab: 'details' | 'changes' | 'overlap' | 'top5';
+  setActiveTab: (tab: 'details' | 'changes' | 'overlap' | 'top5') => void;
   onRefreshAll: () => void;
   onUploadToSheets: () => void;
   onDownloadFromSheets: () => void;
@@ -153,18 +152,6 @@ export const Navbar: React.FC<NavbarProps> = ({
           >
             <PieChart className="w-3.5 h-3.5" />
             <span>前五大追蹤</span>
-          </button>
-
-          <button
-            onClick={() => setActiveTab('sheets')}
-            className={`hidden lg:flex items-center space-x-2 px-3.5 py-1.5 text-xs font-semibold rounded-md transition-colors whitespace-nowrap ${
-              activeTab === 'sheets'
-                ? 'bg-blue-600 text-white shadow-sm'
-                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-            }`}
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5" />
-            <span>Google 試算表自動化與匯出</span>
           </button>
         </nav>
       </div>
