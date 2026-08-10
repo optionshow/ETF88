@@ -25,6 +25,51 @@ const STOCK_COLORS = [
   '#EC4899', // Pink
 ];
 
+// Helper format function for market value (萬元 or 億元)
+function formatMarketValue(mvInWan: number): string {
+  if (Math.abs(mvInWan) >= 10000) {
+    return `${(mvInWan / 10000).toFixed(2)}億`;
+  }
+  return `${Math.round(mvInWan).toLocaleString()}萬`;
+}
+
+// Helper component for rendering trend triangle arrows (Taiwan convention: Up = Red, Down = Green)
+const TrendArrow: React.FC<{
+  diff: number;
+  type?: 'ratio' | 'mv';
+  showVal?: boolean;
+}> = ({ diff, type = 'ratio', showVal = true }) => {
+  if (diff === 0) return null;
+
+  const isUp = diff > 0;
+  const colorClass = isUp ? 'text-red-600' : 'text-emerald-600';
+  const arrowSymbol = isUp ? '▲' : '▼';
+  const signStr = isUp ? '+' : '';
+
+  let valStr = '';
+  if (showVal) {
+    if (type === 'ratio') {
+      valStr = `${signStr}${diff.toFixed(2)}%`;
+    } else {
+      if (Math.abs(diff) >= 10000) {
+        valStr = `${signStr}${(diff / 10000).toFixed(2)}億`;
+      } else {
+        valStr = `${signStr}${Math.round(diff).toLocaleString()}萬`;
+      }
+    }
+  }
+
+  return (
+    <span
+      className={`inline-flex items-center gap-0.5 font-bold text-[11px] ${colorClass} shrink-0`}
+      title={`較前一日${isUp ? '增加' : '減少'} ${valStr}`}
+    >
+      <span>{arrowSymbol}</span>
+      {showVal && <span>{valStr}</span>}
+    </span>
+  );
+};
+
 export const Top5TrackingView: React.FC<Top5TrackingViewProps> = ({ funds }) => {
   const overlapData = calculateStockOverlap(funds);
   const top5Stocks = overlapData.slice(0, 5);
@@ -88,6 +133,36 @@ export const Top5TrackingView: React.FC<Top5TrackingViewProps> = ({ funds }) => 
     });
   }, [realDates, top5Stocks, funds]);
 
+  // Compute trend differences for top 5 stocks between latest date and previous date
+  const stockTrends = useMemo(() => {
+    const trends: Record<string, { ratioDiff: number; mvDiff: number }> = {};
+
+    if (chartData.length >= 2) {
+      const latest = chartData[chartData.length - 1];
+      const prev = chartData[chartData.length - 2];
+
+      top5Stocks.forEach((stock, idx) => {
+        const key = stock.stockCode || `stock_${idx}`;
+        const latestRatio = latest[`ratio_${key}`] ?? 0;
+        const prevRatio = prev[`ratio_${key}`] ?? 0;
+        const latestMv = latest[`mv_${key}`] ?? 0;
+        const prevMv = prev[`mv_${key}`] ?? 0;
+
+        trends[key] = {
+          ratioDiff: +(latestRatio - prevRatio).toFixed(2),
+          mvDiff: Math.round(latestMv - prevMv),
+        };
+      });
+    } else {
+      top5Stocks.forEach((stock, idx) => {
+        const key = stock.stockCode || `stock_${idx}`;
+        trends[key] = { ratioDiff: 0, mvDiff: 0 };
+      });
+    }
+
+    return trends;
+  }, [chartData, top5Stocks]);
+
   return (
     <div className="space-y-6">
       {/* Top Header Banner */}
@@ -120,6 +195,8 @@ export const Top5TrackingView: React.FC<Top5TrackingViewProps> = ({ funds }) => 
           const totalMv = stock.price
             ? (stock.price * stock.totalShares) / 10000
             : stock.funds.reduce((acc, f) => acc + (f.price ? (f.price * f.shares) / 10000 : 0), 0);
+          const key = stock.stockCode || `stock_${idx}`;
+          const trend = stockTrends[key] || { ratioDiff: 0, mvDiff: 0 };
 
           return (
             <div
@@ -149,18 +226,25 @@ export const Top5TrackingView: React.FC<Top5TrackingViewProps> = ({ funds }) => 
                 {stock.stockName}
               </div>
 
-              <div className="mt-2.5 flex items-baseline justify-between">
-                <div className="flex flex-col">
-                  <span className="text-[10px] text-slate-500">持股比例</span>
-                  <span className="font-mono font-black text-sm text-slate-900">
-                    {stock.totalRatio.toFixed(2)}%
-                  </span>
+              <div className="mt-2.5 space-y-1.5 pt-2 border-t border-slate-100">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] text-slate-500 font-medium">持股比例</span>
+                  <div className="flex items-center gap-1 font-mono">
+                    <span className="font-black text-xs text-slate-900">
+                      {stock.totalRatio.toFixed(2)}%
+                    </span>
+                    <TrendArrow diff={trend.ratioDiff} type="ratio" showVal={true} />
+                  </div>
                 </div>
-                <div className="flex flex-col items-end">
-                  <span className="text-[10px] text-slate-500">持股市值</span>
-                  <span className="font-mono font-bold text-xs text-slate-700">
-                    ${Math.round(totalMv).toLocaleString()}萬
-                  </span>
+
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] text-slate-500 font-medium">持股市值</span>
+                  <div className="flex items-center gap-1 font-mono">
+                    <span className="font-bold text-xs text-slate-700">
+                      ${formatMarketValue(totalMv)}
+                    </span>
+                    <TrendArrow diff={trend.mvDiff} type="mv" showVal={true} />
+                  </div>
                 </div>
               </div>
             </div>
@@ -280,11 +364,14 @@ export const Top5TrackingView: React.FC<Top5TrackingViewProps> = ({ funds }) => 
                 />
 
                 <Tooltip
-                  content={({ active, payload, label }) => {
+                  content={({ active, payload }) => {
                     if (active && payload && payload.length) {
                       const data = payload[0].payload;
+                      const cIndex = chartData.findIndex((item) => item.fullDate === data.fullDate);
+                      const prevData = cIndex > 0 ? chartData[cIndex - 1] : null;
+
                       return (
-                        <div className="bg-slate-900 text-white p-3.5 rounded-lg shadow-xl text-xs space-y-2.5 border border-slate-700 font-sans min-w-[260px]">
+                        <div className="bg-slate-900 text-white p-3.5 rounded-lg shadow-xl text-xs space-y-2.5 border border-slate-700 font-sans min-w-[280px]">
                           <div className="font-bold border-b border-slate-700 pb-1.5 text-slate-200 flex items-center justify-between">
                             <span>日期: {data.fullDate}</span>
                             <span className="text-[11px] text-blue-400 font-mono">
@@ -298,6 +385,12 @@ export const Top5TrackingView: React.FC<Top5TrackingViewProps> = ({ funds }) => 
                               const color = STOCK_COLORS[idx % STOCK_COLORS.length];
                               const ratio = data[`ratio_${key}`] ?? 0;
                               const mv = data[`mv_${key}`] ?? 0;
+
+                              const prevRatio = prevData ? (prevData[`ratio_${key}`] ?? 0) : undefined;
+                              const prevMv = prevData ? (prevData[`mv_${key}`] ?? 0) : undefined;
+
+                              const ratioDiff = prevRatio !== undefined ? +(ratio - prevRatio).toFixed(2) : 0;
+                              const mvDiff = prevMv !== undefined ? Math.round(mv - prevMv) : 0;
 
                               return (
                                 <div
@@ -315,11 +408,13 @@ export const Top5TrackingView: React.FC<Top5TrackingViewProps> = ({ funds }) => 
                                   </div>
 
                                   <div className="flex items-center justify-between text-[11px] text-slate-300 pl-4 font-mono">
-                                    <span>
+                                    <span className="inline-flex items-center gap-1">
                                       持股比: <strong className="text-blue-300">{ratio.toFixed(2)}%</strong>
+                                      {prevData && <TrendArrow diff={ratioDiff} type="ratio" showVal={true} />}
                                     </span>
-                                    <span>
-                                      市值: <strong className="text-emerald-300">${mv.toLocaleString()}萬</strong>
+                                    <span className="inline-flex items-center gap-1">
+                                      市值: <strong className="text-emerald-300">${formatMarketValue(mv)}</strong>
+                                      {prevData && <TrendArrow diff={mvDiff} type="mv" showVal={true} />}
                                     </span>
                                   </div>
                                 </div>
