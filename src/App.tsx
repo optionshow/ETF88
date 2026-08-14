@@ -42,15 +42,9 @@ export default function App() {
     setFunds(loaded);
     setSheetsLastUpdated(getDatabaseLastUpdatedTime(loaded));
 
-    // 若網頁持股明細日期的日期是今天日期，表示持股內容已經是最新：停止自動更新、停止自動擷取、停止由試算表下載
-    if (isFundsTodayData(loaded)) {
-      console.log('[Auto-Check] 網頁持股明細日期的日期是今天日期，持股內容已經是最新。已停止自動更新，停止自動擷取，停止由試算表下載。');
-      return;
-    }
-
-    // 否則，自動連線試算表並檢查
-    syncAndMergeSheetsDatabase(loaded)
-      .then((res) => {
+    const performStartupSync = async () => {
+      try {
+        const res = await syncAndMergeSheetsDatabase(loaded);
         let currentFunds = loaded;
         if (res.syncedPeriodsCount > 0 || res.updatedFunds.length > 0) {
           currentFunds = res.updatedFunds;
@@ -62,7 +56,7 @@ export default function App() {
             setSheetsLastUpdated(getDatabaseLastUpdatedTime(currentFunds));
           }
           if (res.syncedPeriodsCount > 0) {
-            showToast(`⚡ 已自動連線並比對 Google 試算表資料庫 (${res.source})，載入 ${res.syncedPeriodsCount} 個歷史期別！`);
+            showToast(`⚡ 已自動連線並同步 Google 試算表雲端資料庫，載入 ${res.syncedPeriodsCount} 個歷史期別！`);
           }
         } else if (res.latestUploadTime) {
           setSheetsLastUpdated(res.latestUploadTime);
@@ -75,10 +69,34 @@ export default function App() {
         } else {
           console.log('[Auto-Check] Today data already present in Google Sheets, skipped web scraping.');
         }
-      })
-      .catch((err) => {
+      } catch (err) {
         console.warn('Auto sheets sync on start error:', err);
-      });
+      }
+    };
+
+    performStartupSync();
+
+    // 當切換回此分頁時，自動靜默比對雲端資料庫，避免多台電腦不同步
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        const current = getSavedFunds();
+        syncAndMergeSheetsDatabase(current).then((res) => {
+          if (res && res.updatedFunds && res.updatedFunds.length > 0) {
+            setFunds(res.updatedFunds);
+            saveFunds(res.updatedFunds);
+            if (res.latestUploadTime) setSheetsLastUpdated(res.latestUploadTime);
+          }
+        }).catch(() => {});
+      }
+    };
+
+    window.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    window.addEventListener('focus', handleVisibilityOrFocus);
+
+    return () => {
+      window.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
+    };
   }, []);
 
   const showToast = (text: string, type: 'success' | 'error' = 'success') => {
@@ -99,10 +117,23 @@ export default function App() {
     }).replace(/-/g, '/');
 
     try {
+      // 1. 先與試算表雙向合併，確保包含其他電腦已寫入之歷史期別（如 8/13）
+      let currentFunds = funds;
+      try {
+        const syncRes = await syncAndMergeSheetsDatabase(funds);
+        if (syncRes && syncRes.updatedFunds && syncRes.updatedFunds.length > 0) {
+          currentFunds = syncRes.updatedFunds;
+          setFunds(currentFunds);
+          saveFunds(currentFunds);
+        }
+      } catch (e) {
+        console.warn('Pre-upload sync warning:', e);
+      }
+
       localStorage.setItem('db_last_uploaded_time', nowTimestamp);
       setSheetsLastUpdated(nowTimestamp);
 
-      const res = await pushAppDataToSheets(funds, undefined, nowTimestamp);
+      const res = await pushAppDataToSheets(currentFunds, undefined, nowTimestamp);
       if (res.success) {
         showToast('✅ 成功將目前網頁資料上傳至 Google 試算表資料庫！');
       } else {
@@ -136,12 +167,14 @@ export default function App() {
     try {
       const currentSaved = getSavedFunds();
 
-      // 1. 先嘗試從 Google 試算表資料庫讀取並同步最新歷史期別
+      // 1. 先嘗試從 Google 試算表資料庫讀取並同步最新歷史期別（如 8/13）
       let sheetsSyncedFunds = currentSaved;
       try {
         const sheetsSync = await syncAndMergeSheetsDatabase(currentSaved);
         if (sheetsSync && sheetsSync.updatedFunds && sheetsSync.updatedFunds.length > 0) {
           sheetsSyncedFunds = sheetsSync.updatedFunds;
+          setFunds(sheetsSyncedFunds);
+          saveFunds(sheetsSyncedFunds);
           if (sheetsSync.latestUploadTime) {
             setSheetsLastUpdated(sheetsSync.latestUploadTime);
           } else {
@@ -187,7 +220,8 @@ export default function App() {
 
       for (let i = 0; i < newFundsList.length; i++) {
         const fund = newFundsList[i];
-        const res = await fetchLiveFundData(fund.code);
+        // 傳入已包含 8/13 等歷史期別的 fund 物件，避免被單機舊快取覆蓋
+        const res = await fetchLiveFundData(fund.code, fund);
         if (res) {
           newFundsList[i] = res;
           updatedCount++;

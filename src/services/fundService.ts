@@ -330,7 +330,7 @@ export function saveFunds(funds: FundData[]): void {
 }
 
 // Scrape live fund from backend endpoint
-export async function fetchLiveFundData(fundCodeOrUrl: string): Promise<FundData | null> {
+export async function fetchLiveFundData(fundCodeOrUrl: string, existingFund?: FundData): Promise<FundData | null> {
   try {
     const res = await fetch('/api/scrape-fund', {
       method: 'POST',
@@ -349,7 +349,8 @@ export async function fetchLiveFundData(fundCodeOrUrl: string): Promise<FundData
     if (result.success && result.data) {
       const scraped = result.data;
       const officialMeta = getOfficialMetadata(scraped.fundCode || fundCodeOrUrl);
-      const existing = getSavedFunds().find((f) => f.code.toUpperCase().trim() === (officialMeta?.code || scraped.fundCode).toUpperCase().trim() || f.id.toUpperCase().trim() === (officialMeta?.code || scraped.fundCode).toUpperCase().trim());
+      const savedFund = getSavedFunds().find((f) => f.code.toUpperCase().trim() === (officialMeta?.code || scraped.fundCode).toUpperCase().trim() || f.id.toUpperCase().trim() === (officialMeta?.code || scraped.fundCode).toUpperCase().trim());
+      const existing = existingFund || savedFund;
 
       const normDate = normalizeDateString(scraped.asOfDate || new Date().toISOString().slice(0, 10).replace(/-/g, '/'));
 
@@ -360,7 +361,12 @@ export async function fetchLiveFundData(fundCodeOrUrl: string): Promise<FundData
       };
 
       const snapMap = new Map<string, any>();
-      (existing?.snapshots || []).forEach((s) => {
+      // Collect snapshots from existingFund as well as savedFund to prevent losing any historical dates
+      (savedFund?.snapshots || []).forEach((s) => {
+        const k = normalizeDateString(s.date || s.asOfDate);
+        if (k) snapMap.set(k, s);
+      });
+      (existingFund?.snapshots || []).forEach((s) => {
         const k = normalizeDateString(s.date || s.asOfDate);
         if (k) snapMap.set(k, s);
       });
@@ -409,7 +415,9 @@ export async function fetchLiveFundData(fundCodeOrUrl: string): Promise<FundData
   const code = fundCodeOrUrl.toUpperCase().trim();
   const officialMeta = getOfficialMetadata(code);
   const searchKey = officialMeta?.code || code;
-  const found = getSavedFunds().find((f) => f.code.toUpperCase().trim() === searchKey || f.id.toUpperCase().trim() === searchKey);
+  const found = (existingFund && (existingFund.code.toUpperCase().trim() === searchKey || existingFund.id.toUpperCase().trim() === searchKey))
+    ? existingFund
+    : getSavedFunds().find((f) => f.code.toUpperCase().trim() === searchKey || f.id.toUpperCase().trim() === searchKey);
   return found || null;
 }
 
@@ -640,7 +648,7 @@ export async function fetchAndUpdateLiveStockPrices(funds: FundData[]): Promise<
 
 /**
  * Push APP's active fund holdings (with exact shares, ratio, price, marketValue) directly to Google Sheets database.
- * Priority: APP active data overwrites Google Sheets data.
+ * Auto-merges with remote Google Sheets database first so no historical dates (e.g. intermediate days) are lost across different computers.
  */
 export async function pushAppDataToSheets(
   funds: FundData[],
@@ -655,8 +663,20 @@ export async function pushAppDataToSheets(
     localStorage.setItem('db_last_uploaded_time', uploadTimestamp);
   } catch (e) {}
 
+  // 1. Two-way pre-merge: Fetch existing Google Sheets data first to guarantee ALL historical dates across all devices are retained
+  let consolidatedFunds = funds;
+  try {
+    const syncRes = await syncAndMergeSheetsDatabase(funds, defaultWebAppUrl);
+    if (syncRes && syncRes.updatedFunds && syncRes.updatedFunds.length > 0) {
+      consolidatedFunds = syncRes.updatedFunds;
+      saveFunds(consolidatedFunds);
+    }
+  } catch (syncErr) {
+    console.warn('Pre-push sync warning:', syncErr);
+  }
+
   const fundDataList: any[] = [];
-  funds.forEach((fund) => {
+  consolidatedFunds.forEach((fund) => {
     if (fund.snapshots && fund.snapshots.length > 0) {
       fund.snapshots.forEach((snap) => {
         const snapHoldings = snap.holdings || [];

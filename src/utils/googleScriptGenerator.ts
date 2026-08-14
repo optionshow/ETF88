@@ -309,12 +309,17 @@ function doPost(e) {
     var now = new Date();
     var cutoffTime = now.getTime() - (60 * 24 * 60 * 60 * 1000); // 60天前
 
+    // 依基金代碼分組，確保同一基金的所有期別以單一批次原子化合併，絕對不遺漏試算表中已有的歷史期別 (如 8/13)
+    var fundGroupMap = {};
     fundList.forEach(function(item) {
-      var code = item.code || "UNKNOWN";
-      var asOfDate = parseAndFormatDate(item.asOfDate || Utilities.formatDate(now, "Asia/Taipei", "yyyy/MM/dd"));
-      var holdings = item.holdings || [];
+      var rawCode = (item.code || "UNKNOWN").replace(".TW", "").toUpperCase().trim();
+      if (!fundGroupMap[rawCode]) fundGroupMap[rawCode] = [];
+      fundGroupMap[rawCode].push(item);
+    });
 
-      var sheetName = "基金明細_" + code.replace(".TW", "");
+    Object.keys(fundGroupMap).forEach(function(code) {
+      var itemsForFund = fundGroupMap[code];
+      var sheetName = "基金明細_" + code;
       var sheet = ss.getSheetByName(sheetName);
       if (!sheet) {
         sheet = ss.insertSheet(sheetName);
@@ -327,10 +332,37 @@ function doPost(e) {
         existingRows = sheet.getRange(2, 1, lastRow - 1, Math.max(lastCol, 6)).getDisplayValues();
       }
 
-      // 1. 過濾並標準化舊資料：若日期與目前寫入的 asOfDate 相同則先排除，以新推送之完整持股為準
+      // 1. 蒐集本次推送包含的所有日期
+      var incomingDateSet = {};
+      var newRows = [];
+
+      itemsForFund.forEach(function(item) {
+        var asOfDate = parseAndFormatDate(item.asOfDate || Utilities.formatDate(now, "Asia/Taipei", "yyyy/MM/dd"));
+        if (asOfDate) {
+          incomingDateSet[asOfDate] = true;
+          var holdings = item.holdings || [];
+          holdings.slice(0, 20).forEach(function(h) {
+            var priceDisplay = h.price ? Number(h.price) : "-";
+            var sharesNum = Number(h.shares) || 0;
+            var mv = h.marketValue || (h.price ? (Number(h.price) * sharesNum) : 0);
+            var mvDisplay = formatMvDisplay(mv);
+            var ratioFormatted = parseAndFormatRatio(h.ratio);
+            newRows.push([
+              asOfDate,
+              h.stockName || h.name || '',
+              priceDisplay,
+              mvDisplay,
+              h.sharesFormatted || (sharesNum ? sharesNum.toLocaleString() : "0"),
+              ratioFormatted
+            ]);
+          });
+        }
+      });
+
+      // 2. 嚴格保留試算表內原有「其他歷史日期」(例如 8/13) 的所有記錄
       var normalizedExisting = existingRows.filter(function(row) {
         var rowDateStr = parseAndFormatDate(row[0]);
-        return rowDateStr !== asOfDate;
+        return rowDateStr && !incomingDateSet[rowDateStr];
       }).map(function(row) {
         var d = parseAndFormatDate(row[0]);
         var name = String(row[1] || '').trim();
@@ -356,25 +388,7 @@ function doPost(e) {
         return [d, name, price, mv, shares, ratio];
       });
 
-      // 2. 建立新資料列 (嚴格保證 6 個欄位與去重比對)
-      var newRows = holdings.slice(0, 20).map(function(h) {
-        var priceDisplay = h.price ? Number(h.price) : "-";
-        var sharesNum = Number(h.shares) || 0;
-        var mv = h.marketValue || (h.price ? (Number(h.price) * sharesNum) : 0);
-        var mvDisplay = formatMvDisplay(mv);
-        var ratioFormatted = parseAndFormatRatio(h.ratio);
-
-        return [
-          asOfDate,
-          h.stockName || h.name || '',
-          priceDisplay,
-          mvDisplay,
-          h.sharesFormatted || (sharesNum ? sharesNum.toLocaleString() : "0"),
-          ratioFormatted
-        ];
-      });
-
-      // 3. 合併與過濾 60 天前舊資料，並執行徹底去重 (deduplicateAndCleanRows)
+      // 3. 雙向結合：試算表歷史其他期別 + 本次更新期別
       var combinedRows = normalizedExisting.concat(newRows);
       var cleanedRows = combinedRows.filter(function(row) {
         var dStr = parseAndFormatDate(row[0]);
@@ -386,7 +400,7 @@ function doPost(e) {
 
       var deduplicatedRows = deduplicateAndCleanRows(cleanedRows);
 
-      // 4. 依日期降冪排序
+      // 4. 依日期降冪排序 (最新日期在最上方)
       deduplicatedRows.sort(function(a, b) {
         var dA = new Date(parseAndFormatDate(a[0]).split("/").join("-")).getTime() || 0;
         var dB = new Date(parseAndFormatDate(b[0]).split("/").join("-")).getTime() || 0;
