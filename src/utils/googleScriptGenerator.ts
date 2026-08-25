@@ -8,11 +8,10 @@ export function generateGoogleScript(fundCodes?: string[], spreadsheetId?: strin
  * Google Apps Script - MoneyDJ 基金/ETF 持股明細自動接收與匯出腳本 (含目前股價與持股市值欄位)
  * 
  * ✨ 本腳本特點:
- * 1. 【APP 主動推送】包含 doPost(e) Web App 接收端，由 APP 擷取個股名稱、目前股價與持股市值後直接寫入試算表！
- * 2. 【每日 08:00 自動定時】也可由腳本自行定時抓取 (setupDailyTrigger)
- * 3. 【6欄完整紀錄】包含「日期」、「個股名稱」、「目前股價」、「持股市值(萬)」、「投資股數」、「比例(%)」
- * 4. 【統一日期格式與去重】自動將所有日期統一格式化為 YYYY/MM/DD，覆蓋相同日期數據，歷史紀錄不重疊
- * 5. 【自動清理】自動刪除 60 天前的歷史資料
+ * 1. 【APP 雙向雲端同步】包含 doGet(e) 與 doPost(e) Web App 接口，APP 開啟時自動比對並同步歷史期別與持股數據
+ * 2. 【6欄完整紀錄】包含「日期」、「個股名稱」、「目前股價」、「持股市值(萬)」、「投資股數」、「比例(%)」
+ * 3. 【統一日期格式與去重】自動將所有日期統一格式化為 YYYY/MM/DD，覆蓋相同日期數據，歷史紀錄不重疊
+ * 4. 【自動清理】自動刪除 60 天前的歷史資料
  * 
  * 指定目標試算表: https://docs.google.com/spreadsheets/d/${targetSpreadsheetId}/edit
  */
@@ -465,29 +464,7 @@ function doPost(e) {
 }
 
 /**
- * 2️⃣ 自動排程觸發器設定 ( setupDailyTrigger )
- */
-function setupDailyTrigger() {
-  var triggers = ScriptApp.getProjectTriggers();
-  triggers.forEach(function(t) {
-    if (t.getHandlerFunction() === "updateFundDetails") {
-      ScriptApp.deleteTrigger(t);
-    }
-  });
-
-  ScriptApp.newTrigger("updateFundDetails")
-    .timeBased()
-    .everyDays(1)
-    .atHour(8)
-    .nearMinute(0)
-    .inTimezone("Asia/Taipei")
-    .create();
-  
-  Logger.log("✅ 每日 08:00 自動對比更新持股明細之觸發器設定完成！");
-}
-
-/**
- * 3️⃣ 備用: 由腳本獨立抓取 MoneyDJ 持股明細 (包含目前股價與市值)
+ * 2️⃣ 備用: 由腳本獨立抓取 MoneyDJ 持股明細 (包含目前股價與市值)
  */
 function updateFundDetails() {
   var fundCodes = ${JSON.stringify(codesList)};

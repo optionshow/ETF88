@@ -191,7 +191,7 @@ export const GoogleSheetsView: React.FC<GoogleSheetsViewProps> = ({ funds, onUpd
             <div>
               <div className="flex items-center space-x-2 flex-wrap gap-y-1">
                 <h3 className="text-base font-bold text-slate-900">
-                  Google 試算表同步與 Apps Script 自動更新設定
+                  Google 試算表雲端同步與 Web App 連線設定
                 </h3>
                 <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 font-bold text-[10px] rounded-full">
                   支援雙向比對 &amp; 歷史期別

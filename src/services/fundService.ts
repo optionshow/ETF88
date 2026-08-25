@@ -47,12 +47,14 @@ export function isTodayDate(dateStr?: string | null): boolean {
 
 export function isFundsTodayData(funds: FundData[]): boolean {
   if (!funds || funds.length === 0) return false;
-  return funds.some((f) => {
+  return funds.every((f) => {
     if (isTodayDate(f.asOfDate)) return true;
     if (f.snapshots && f.snapshots.some((s) => isTodayDate(s.date || s.asOfDate))) return true;
     return false;
   });
 }
+
+export const isAllFundsTodayData = isFundsTodayData;
 
 function cleanFundName(name: string, code: string): string {
   if (!name) return name;

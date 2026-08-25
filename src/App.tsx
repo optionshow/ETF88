@@ -42,39 +42,89 @@ export default function App() {
     setFunds(loaded);
     setSheetsLastUpdated(getDatabaseLastUpdatedTime(loaded));
 
-    const performStartupSync = async () => {
+    const checkAndSyncOnStartup = async () => {
+      // 1. 開啟時先確認目前本地資料是否全部都是最新（每檔基金皆包含今日最新期別）
+      const isAlreadyLatest = isFundsTodayData(loaded);
+
+      if (isAlreadyLatest) {
+        console.log('[Startup Check] 目前本地資料皆為今日最新，無需重複擷取。');
+        return;
+      }
+
+      console.log('[Startup Check] 目前資料非最新，先抓取雲端試算表歷史舊資料，再更新今日最新持股...');
+      setIsRefreshing(true);
+
       try {
-        const res = await syncAndMergeSheetsDatabase(loaded);
-        let currentFunds = loaded;
-        if (res.syncedPeriodsCount > 0 || res.updatedFunds.length > 0) {
-          currentFunds = res.updatedFunds;
-          setFunds(currentFunds);
-          saveFunds(currentFunds);
-          if (res.latestUploadTime) {
-            setSheetsLastUpdated(res.latestUploadTime);
-          } else {
-            setSheetsLastUpdated(getDatabaseLastUpdatedTime(currentFunds));
-          }
-          if (res.syncedPeriodsCount > 0) {
-            showToast(`⚡ 已自動連線並同步 Google 試算表雲端資料庫，載入 ${res.syncedPeriodsCount} 個歷史期別！`);
-          }
-        } else if (res.latestUploadTime) {
-          setSheetsLastUpdated(res.latestUploadTime);
+        // 第一步：先抓取舊資料（由 Google 試算表同步歷史期別，確保跨裝置歷史紀錄完整不遺漏）
+        const syncRes = await syncAndMergeSheetsDatabase(loaded);
+        let currentFunds = (syncRes && syncRes.updatedFunds && syncRes.updatedFunds.length > 0)
+          ? syncRes.updatedFunds
+          : loaded;
+
+        setFunds(currentFunds);
+        saveFunds(currentFunds);
+        if (syncRes.latestUploadTime) {
+          setSheetsLastUpdated(syncRes.latestUploadTime);
+        } else {
+          setSheetsLastUpdated(getDatabaseLastUpdatedTime(currentFunds));
         }
 
-        // 檢查試算表同步後是否包含今天資料
-        if (!isFundsTodayData(currentFunds)) {
-          console.log('[Auto-Check] Today data missing, auto-fetching live fund holdings...');
-          handleRefreshAll();
+        // 第二步：檢查從試算表抓下來的資料中是否已包含今日最新持股明細
+        const hasTodayAfterSync = isFundsTodayData(currentFunds);
+
+        if (hasTodayAfterSync) {
+          // 若其他裝置已更新並上傳今日數據至試算表，直接刷新最新個股即時股價
+          try {
+            const finalFunds = await fetchAndUpdateLiveStockPrices(currentFunds);
+            setFunds(finalFunds);
+            saveFunds(finalFunds);
+          } catch (e) {
+            console.warn('Startup live stock price update failed:', e);
+          }
+          showToast(`⚡ 已自 Google 試算表載入完整歷史期別與今日持股！`);
         } else {
-          console.log('[Auto-Check] Today data already present in Google Sheets, skipped web scraping.');
+          // 若試算表中也沒有今日資料，則執行官方網站擷取流程，更新今日最新持股
+          let updatedCount = 0;
+          const newFundsList = [...currentFunds];
+
+          for (let i = 0; i < newFundsList.length; i++) {
+            const fund = newFundsList[i];
+            // 傳入已包含所有歷史期別的 fund 物件，避免單機舊快取覆蓋
+            const res = await fetchLiveFundData(fund.code, fund);
+            if (res) {
+              newFundsList[i] = res;
+              updatedCount++;
+            }
+          }
+
+          // 同步更新個股最新即時股價
+          let listWithPrices = newFundsList;
+          try {
+            listWithPrices = await fetchAndUpdateLiveStockPrices(newFundsList);
+          } catch (err) {
+            console.warn('Stock price update failed during startup:', err);
+          }
+
+          setFunds(listWithPrices);
+          saveFunds(listWithPrices);
+
+          // 將更新後的今日持股與完整歷史期別安全同步推送到 Google 試算表資料庫
+          try {
+            await pushAppDataToSheets(listWithPrices);
+          } catch (e) {
+            console.warn('Auto upload to sheets failed during startup:', e);
+          }
+
+          showToast(`✅ 已同步歷史期別並成功擷取 ${updatedCount} 檔基金今日最新持股！`);
         }
       } catch (err) {
-        console.warn('Auto sheets sync on start error:', err);
+        console.warn('Startup check and sync error:', err);
+      } finally {
+        setIsRefreshing(false);
       }
     };
 
-    performStartupSync();
+    checkAndSyncOnStartup();
 
     // 當切換回此分頁時，自動靜默比對雲端資料庫，避免多台電腦不同步
     const handleVisibilityOrFocus = () => {
@@ -403,7 +453,7 @@ export default function App() {
       <footer className="border-t border-slate-200 bg-white py-4 text-center text-slate-500 text-xs mt-auto">
         <div className="max-w-7xl mx-auto px-4 flex flex-wrap items-center justify-between gap-2">
           <span>台灣基金/ETF 持股分析儀 — 專用擷取 4 大欄位（日期、個股名稱、投資股數、比例%）</span>
-          <span>資料來源: 投信官方揭露數據 / 公開資訊 (每日 08:00、16:00 與 18:00 自動同步擷取持股與最新個股股價)</span>
+          <span>資料來源: 投信官方揭露數據 / 公開資訊 (開啟時自動比對最新狀態・同步試算表歷史期別並更新今日持股)</span>
         </div>
       </footer>
     </div>
