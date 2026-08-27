@@ -70,6 +70,36 @@ const TrendArrow: React.FC<{
   );
 };
 
+// Helper to retrieve the active snapshot for a fund on or most recently before targetDate
+function getFundSnapshotForDate(fund: FundData, targetDate: string) {
+  const snaps = fund.snapshots || [];
+  if (snaps.length === 0) return null;
+
+  // 1. Exact match by date
+  const exact = snaps.find(
+    (s) => (s.date || s.asOfDate || '').replace(/-/g, '/') === targetDate
+  );
+  if (exact) return exact;
+
+  // 2. Sort snapshots descending
+  const sorted = [...snaps].sort((a, b) => {
+    const da = new Date((a.date || a.asOfDate || '').replace(/\//g, '-')).getTime() || 0;
+    const db = new Date((b.date || b.asOfDate || '').replace(/\//g, '-')).getTime() || 0;
+    return db - da;
+  });
+
+  // 3. Find latest snapshot on or before targetDate
+  const targetTime = new Date(targetDate.replace(/\//g, '-')).getTime();
+  const prior = sorted.find((s) => {
+    const sTime = new Date((s.date || s.asOfDate || '').replace(/\//g, '-')).getTime() || 0;
+    return sTime <= targetTime;
+  });
+  if (prior) return prior;
+
+  // 4. Fallback to earliest snapshot or latest
+  return sorted[sorted.length - 1] || sorted[0];
+}
+
 export const Top5TrackingView: React.FC<Top5TrackingViewProps> = ({ funds }) => {
   const overlapData = calculateStockOverlap(funds);
   const top5Stocks = overlapData.slice(0, 5);
@@ -101,28 +131,46 @@ export const Top5TrackingView: React.FC<Top5TrackingViewProps> = ({ funds }) => 
 
       top5Stocks.forEach((stock, idx) => {
         const key = stock.stockCode || `stock_${idx}`;
-        const stockNameClean = stock.stockName.replace(/\(\d+\)/, '').trim();
+        const stockCodeNorm = (stock.stockCode || '').replace(/[^0-9A-Za-z]/g, '').trim();
+        const stockNameClean = stock.stockName
+          .replace(/\*/g, '')
+          .replace(/\(\s*\d+\s*\)/g, '')
+          .replace(/\d{4,6}/g, '')
+          .trim();
 
         let totalRatio = 0;
         let totalMv = 0;
 
         funds.forEach((fund) => {
-          const snap = (fund.snapshots || []).find(
-            (s) => (s.date || s.asOfDate || '').replace(/-/g, '/') === dKey
-          );
+          // Use the snapshot on or most recently before dKey to avoid missing funds on staggered date updates
+          const snap = getFundSnapshotForDate(fund, dKey);
           if (!snap) return;
 
-          const holding = (snap.holdings || []).find((h: any) => {
-            if (stock.stockCode && h.stockCode === stock.stockCode) return true;
-            return h.stockName && h.stockName.includes(stockNameClean);
+          const matchHoldings = (snap.holdings || []).filter((h: any) => {
+            const hCode = (h.stockCode || (h.stockName && h.stockName.match(/(\d{4,6})/)?.[1]) || '')
+              .replace(/[^0-9A-Za-z]/g, '')
+              .trim();
+            if (stockCodeNorm && hCode && stockCodeNorm.toUpperCase() === hCode.toUpperCase()) return true;
+            const hNameClean = (h.stockName || '')
+              .replace(/\*/g, '')
+              .replace(/\(\s*\d+\s*\)/g, '')
+              .replace(/\d{4,6}/g, '')
+              .trim();
+            return !!(
+              hNameClean &&
+              stockNameClean &&
+              (hNameClean === stockNameClean ||
+                hNameClean.includes(stockNameClean) ||
+                stockNameClean.includes(hNameClean))
+            );
           });
 
-          if (holding) {
+          matchHoldings.forEach((holding: any) => {
             totalRatio += holding.ratio || 0;
             const price = holding.price || stock.price || 0;
-            const mv = price > 0 ? (price * holding.shares) / 10000 : 0;
+            const mv = price > 0 ? (price * (holding.shares || 0)) / 10000 : 0;
             totalMv += mv;
-          }
+          });
         });
 
         dataPoint[`ratio_${key}`] = +totalRatio.toFixed(2);

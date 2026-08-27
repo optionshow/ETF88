@@ -510,26 +510,42 @@ export function calculateHoldingChanges(
   return changes.sort((a, b) => Math.abs(b.diffRatio) - Math.abs(a.diffRatio));
 }
 
-// Calculate Cross-Fund Stock Overlap (跨基金持股重疊分析)
+// Calculate Cross-Fund Stock Overlap (跨基金持股重疊分析 - 合計相同個股之持股比例與市值)
 export function calculateStockOverlap(funds: FundData[]): StockOverlap[] {
   const stockMap = new Map<string, StockOverlap>();
 
   funds.forEach((fund) => {
-    const latestSnapshot = fund.snapshots[0];
-    if (!latestSnapshot) return;
+    const sortedSnaps = [...(fund.snapshots || [])].sort((a, b) => {
+      const da = new Date((a.date || a.asOfDate || '').replace(/\//g, '-')).getTime() || 0;
+      const db = new Date((b.date || b.asOfDate || '').replace(/\//g, '-')).getTime() || 0;
+      return db - da;
+    });
+    const latestSnapshot = sortedSnaps[0];
+    if (!latestSnapshot || !Array.isArray(latestSnapshot.holdings)) return;
 
     latestSnapshot.holdings.forEach((item) => {
-      // Clean stock name
-      let cleanName = item.stockName;
-      let code = item.stockCode;
-      const codeMatch = cleanName.match(/(\d{4})/);
-      if (codeMatch && !code) code = codeMatch[1];
+      // 1. 提取個股代碼與純中文名稱
+      let code = (item.stockCode || '').replace(/[^0-9A-Za-z]/g, '').trim();
+      let rawName = (item.stockName || '').replace(/\*/g, '').trim();
+      const codeMatch = rawName.match(/(\d{4,6})/);
+      if (codeMatch && !code) {
+        code = codeMatch[1];
+      }
 
-      const key = code || cleanName;
+      const pureChineseName = rawName
+        .replace(/\(\s*\d+\s*\)/g, '')
+        .replace(/\d{4,6}/g, '')
+        .trim();
+
+      // 2. 以代碼或標準名稱作為去重合併的主鍵
+      const key = code ? code.toUpperCase() : pureChineseName;
+      if (!key) return;
+
+      const standardDisplayName = code ? `${pureChineseName} (${code})` : pureChineseName;
 
       if (!stockMap.has(key)) {
         stockMap.set(key, {
-          stockName: cleanName,
+          stockName: standardDisplayName,
           stockCode: code,
           price: item.price,
           funds: [],
@@ -543,18 +559,31 @@ export function calculateStockOverlap(funds: FundData[]): StockOverlap[] {
       if (!existing.price && item.price) {
         existing.price = item.price;
       }
+      if (!existing.stockCode && code) {
+        existing.stockCode = code;
+        existing.stockName = standardDisplayName;
+      }
 
-      existing.funds.push({
-        fundId: fund.id,
-        fundCode: fund.code,
-        fundName: fund.name,
-        shares: item.shares,
-        ratio: item.ratio,
-        price: item.price,
-      });
-      existing.totalRatio += item.ratio;
-      existing.totalShares += item.shares;
-      existing.fundCount += 1;
+      // 檢查此基金是否已在此個股清單中
+      const existingFundEntry = existing.funds.find((f) => f.fundId === fund.id || f.fundCode === fund.code);
+      if (existingFundEntry) {
+        existingFundEntry.shares += item.shares || 0;
+        existingFundEntry.ratio = +(existingFundEntry.ratio + (item.ratio || 0)).toFixed(2);
+        if (!existingFundEntry.price && item.price) existingFundEntry.price = item.price;
+      } else {
+        existing.funds.push({
+          fundId: fund.id,
+          fundCode: fund.code,
+          fundName: fund.name,
+          shares: item.shares || 0,
+          ratio: item.ratio || 0,
+          price: item.price,
+        });
+        existing.fundCount += 1;
+      }
+
+      existing.totalRatio += item.ratio || 0;
+      existing.totalShares += item.shares || 0;
     });
   });
 
@@ -563,7 +592,7 @@ export function calculateStockOverlap(funds: FundData[]): StockOverlap[] {
       ...s,
       totalRatio: +s.totalRatio.toFixed(2),
     }))
-    .sort((a, b) => b.fundCount - a.fundCount || b.totalRatio - a.totalRatio);
+    .sort((a, b) => b.totalRatio - a.totalRatio || b.fundCount - a.fundCount);
 }
 
 /**
