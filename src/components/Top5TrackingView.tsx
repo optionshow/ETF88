@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { FundData } from '../types';
-import { calculateStockOverlap } from '../services/fundService';
+import { calculateStockOverlap, normalizeDateString } from '../services/fundService';
 import {
   ResponsiveContainer,
   ComposedChart,
@@ -75,9 +75,11 @@ function getFundSnapshotForDate(fund: FundData, targetDate: string) {
   const snaps = fund.snapshots || [];
   if (snaps.length === 0) return null;
 
+  const targetNorm = normalizeDateString(targetDate);
+
   // 1. Exact match by date
   const exact = snaps.find(
-    (s) => (s.date || s.asOfDate || '').replace(/-/g, '/') === targetDate
+    (s) => normalizeDateString(s.date || s.asOfDate) === targetNorm
   );
   if (exact) return exact;
 
@@ -89,7 +91,7 @@ function getFundSnapshotForDate(fund: FundData, targetDate: string) {
   });
 
   // 3. Find latest snapshot on or before targetDate
-  const targetTime = new Date(targetDate.replace(/\//g, '-')).getTime();
+  const targetTime = new Date(targetNorm.replace(/\//g, '-')).getTime();
   const prior = sorted.find((s) => {
     const sTime = new Date((s.date || s.asOfDate || '').replace(/\//g, '-')).getTime() || 0;
     return sTime <= targetTime;
@@ -111,13 +113,13 @@ export const Top5TrackingView: React.FC<Top5TrackingViewProps> = ({ funds }) => 
     const datesSet = new Set<string>();
     funds.forEach((fund) => {
       (fund.snapshots || []).forEach((snap) => {
-        const dKey = (snap.date || snap.asOfDate || '').replace(/-/g, '/');
+        const dKey = normalizeDateString(snap.date || snap.asOfDate);
         if (dKey) datesSet.add(dKey);
       });
     });
 
     return Array.from(datesSet).sort(
-      (a, b) => new Date(a).getTime() - new Date(b).getTime()
+      (a, b) => new Date(a.replace(/\//g, '-')).getTime() - new Date(b.replace(/\//g, '-')).getTime()
     );
   }, [funds]);
 

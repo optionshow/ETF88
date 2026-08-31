@@ -1638,6 +1638,31 @@ app.post("/api/push-app-data-to-sheets", async (req, res) => {
   }
 });
 
+// Helper to parse CSV lines respecting quotes and commas within quotes
+function parseCsvLine(text: string): string[] {
+  const result: string[] = [];
+  let cur = "";
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === '"') {
+      if (inQuotes && text[i + 1] === '"') {
+        cur += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (ch === ',' && !inQuotes) {
+      result.push(cur.trim());
+      cur = "";
+    } else {
+      cur += ch;
+    }
+  }
+  result.push(cur.trim());
+  return result.map(c => c.replace(/^"|"$/g, "").trim());
+}
+
 // API: Read database (historical periods and holdings) from Google Apps Script / Google Sheets
 app.post("/api/read-sheets-database", async (req, res) => {
   const { webAppUrl, spreadsheetId, fundCodes } = req.body;
@@ -1709,7 +1734,7 @@ app.post("/api/read-sheets-database", async (req, res) => {
           const timeCsv = await timeRes.text();
           const timeLines = timeCsv.split("\n").map(l => l.trim()).filter(Boolean);
           if (timeLines.length > 1) {
-            const timeCols = timeLines[1].split(",").map(c => c.replace(/^"|"$/g, "").trim());
+            const timeCols = parseCsvLine(timeLines[1]);
             if (timeCols[0]) {
               latestUploadTime = timeCols[0];
             }
@@ -1721,10 +1746,10 @@ app.post("/api/read-sheets-database", async (req, res) => {
     }
     const codesToFetch: string[] = Array.isArray(fundCodes) && fundCodes.length > 0
       ? fundCodes
-      : ["00981A", "00982A", "00407A", "ACPS10", "00878", "0050"];
+      : ["00981A", "00982A", "00407A", "00403A", "00992A"];
 
     for (const code of codesToFetch) {
-      const cleanCode = code.replace(".TW", "");
+      const cleanCode = code.replace(".TW", "").toUpperCase();
       const sheetName = `基金明細_${cleanCode}`;
       const csvUrl = `https://docs.google.com/spreadsheets/d/${targetSpreadsheetId}/gviz/tq?tqx=out:csv&sheet=${encodeURIComponent(sheetName)}`;
 
@@ -1734,80 +1759,105 @@ app.post("/api/read-sheets-database", async (req, res) => {
           const csvText = await csvRes.text();
           const lines = csvText.split("\n").map(l => l.trim()).filter(Boolean);
           if (lines.length > 1) {
+            const headerCols = parseCsvLine(lines[0]);
+            let dateColIdx = headerCols.findIndex(h => h.includes("日"));
+            let nameColIdx = headerCols.findIndex(h => h.includes("名") || h.includes("個股") || h.includes("股票"));
+            let priceColIdx = headerCols.findIndex(h => h.includes("價") || h.includes("價格"));
+            let mvColIdx = headerCols.findIndex(h => h.includes("市值"));
+            let sharesColIdx = headerCols.findIndex(h => h.includes("股數") || h.includes("張數"));
+            let ratioColIdx = headerCols.findIndex(h => h.includes("比例") || h.includes("權重") || h.includes("比重") || h.includes("%"));
+
+            // Fallback indices if header names were not standard
+            if (dateColIdx < 0) dateColIdx = 0;
+            if (nameColIdx < 0) nameColIdx = 1;
+            if (headerCols.length >= 6) {
+              if (priceColIdx < 0) priceColIdx = 2;
+              if (mvColIdx < 0) mvColIdx = 3;
+              if (sharesColIdx < 0) sharesColIdx = 4;
+              if (ratioColIdx < 0) ratioColIdx = 5;
+            } else if (headerCols.length === 5) {
+              if (priceColIdx < 0) priceColIdx = 2;
+              if (sharesColIdx < 0) sharesColIdx = 3;
+              if (ratioColIdx < 0) ratioColIdx = 4;
+            } else {
+              if (sharesColIdx < 0) sharesColIdx = 2;
+              if (ratioColIdx < 0) ratioColIdx = 3;
+            }
+
             const periodMap: Record<string, any[]> = {};
 
             for (let i = 1; i < lines.length; i++) {
-              const cols = lines[i].split(",").map(c => c.replace(/^"|"$/g, "").trim());
+              const cols = parseCsvLine(lines[i]);
               if (cols.length >= 4) {
-                const dateStr = normalizeDateString(cols[0]);
-                const stockName = cols[1];
-                let priceStr = "-";
-                let mvStr = "-";
-                let sharesStr = "0";
-                let ratioStr = "0";
+                const dateStr = normalizeDateString(cols[dateColIdx] || cols[0]);
+                const stockName = cols[nameColIdx] || cols[1];
+                if (!dateStr || !stockName) continue;
 
-                if (cols.length >= 6) {
-                  priceStr = cols[2];
-                  mvStr = cols[3];
-                  sharesStr = cols[4];
-                  ratioStr = cols[5].replace("%", "");
-                } else if (cols.length === 5) {
-                  priceStr = cols[2];
-                  sharesStr = cols[3];
-                  ratioStr = cols[4].replace("%", "");
-                } else {
-                  sharesStr = cols[2];
-                  ratioStr = cols[3].replace("%", "");
+                let priceStr = priceColIdx >= 0 ? cols[priceColIdx] : "-";
+                let mvStr = mvColIdx >= 0 ? cols[mvColIdx] : "-";
+                let sharesStr = sharesColIdx >= 0 ? cols[sharesColIdx] : "0";
+                let ratioStr = ratioColIdx >= 0 ? cols[ratioColIdx] : "0";
+
+                ratioStr = (ratioStr || "").replace("%", "").trim();
+
+                const sharesNum = parseFloat((sharesStr || "").replace(/,/g, "")) || 0;
+                let ratioNum = parseFloat(ratioStr) || 0;
+                if (ratioNum > 0 && ratioNum <= 1.0 && !cols[ratioColIdx]?.includes("%")) {
+                  ratioNum = Math.round(ratioNum * 10000) / 100;
                 }
 
-                if (dateStr && stockName) {
-                  if (!periodMap[dateStr]) periodMap[dateStr] = [];
-                  const sharesNum = parseFloat(sharesStr.replace(/,/g, "")) || 0;
-                  let ratioNum = parseFloat(ratioStr) || 0;
-                  // If raw value is decimal e.g. 0.0844 (without % in string), convert to percentage 8.44
-                  if (ratioNum > 0 && ratioNum <= 1.0 && !ratioStr.includes("%")) {
-                    ratioNum = Math.round(ratioNum * 10000) / 100;
-                  }
+                const priceNum = parseFloat((priceStr || "").replace(/[^0-9\.]/g, "")) || undefined;
+                const rawMv = parseFloat((mvStr || "").replace(/[^0-9\.]/g, ""));
+                const mvNum = rawMv
+                  ? (rawMv >= 100000 ? rawMv : rawMv * 10000)
+                  : (priceNum && sharesNum ? priceNum * sharesNum : undefined);
 
-                  const priceNum = parseFloat(priceStr.replace(/[^0-9\.]/g, "")) || undefined;
-                  const rawMv = parseFloat(mvStr.replace(/[^0-9\.]/g, ""));
-                  const mvNum = rawMv ? (rawMv * 10000) : (priceNum && sharesNum ? priceNum * sharesNum : undefined);
+                // Extract stock code
+                const codeMatch = stockName.match(/(\d{4,6})/);
+                const stockCode = codeMatch ? codeMatch[1] : "";
+                const stockKey = stockCode || stockName.replace(/\s+/g, "");
 
-                  // Extract stock code or clean stock name to deduplicate
-                  const codeMatch = stockName.match(/(\d{4})/);
-                  const stockKey = codeMatch ? codeMatch[1] : stockName.replace(/\s+/g, "");
+                if (!periodMap[dateStr]) periodMap[dateStr] = [];
 
-                  const existingIdx = periodMap[dateStr].findIndex((h: any) => {
-                    const hCode = h.stockName.match(/(\d{4})/);
-                    const k = hCode ? hCode[1] : h.stockName.replace(/\s+/g, "");
-                    return k === stockKey;
-                  });
+                const existingIdx = periodMap[dateStr].findIndex((h: any) => {
+                  const hCode = (h.stockCode || h.stockName.match(/(\d{4,6})/)?.[1] || "").trim();
+                  const k = hCode || h.stockName.replace(/\s+/g, "");
+                  return k === stockKey;
+                });
 
-                  const item = {
-                    id: `${cleanCode}_${stockName}`,
-                    stockName,
-                    price: priceNum,
-                    marketValue: mvNum,
-                    shares: sharesNum,
-                    sharesFormatted: sharesStr || sharesNum.toLocaleString(),
-                    ratio: ratioNum,
-                    date: dateStr
-                  };
+                const item = {
+                  id: `${cleanCode}_${stockName}_${dateStr.replace(/\//g, "")}`,
+                  stockName,
+                  stockCode,
+                  price: priceNum,
+                  marketValue: mvNum,
+                  shares: sharesNum,
+                  sharesFormatted: sharesStr || sharesNum.toLocaleString(),
+                  ratio: ratioNum,
+                  date: dateStr
+                };
 
-                  if (existingIdx >= 0) {
-                    periodMap[dateStr][existingIdx] = item;
-                  } else {
-                    periodMap[dateStr].push(item);
-                  }
+                if (existingIdx >= 0) {
+                  periodMap[dateStr][existingIdx] = item;
+                } else {
+                  periodMap[dateStr].push(item);
                 }
               }
             }
 
-            const snapshots = Object.keys(periodMap).map(d => ({
-              date: d,
-              asOfDate: d,
-              holdings: periodMap[d]
-            })).sort((a, b) => new Date(b.date.replace(/\//g, "-")).getTime() - new Date(a.date.replace(/\//g, "-")).getTime());
+            const presetFund = INITIAL_FUNDS.find(f => f.code.includes(cleanCode));
+            const prevHoldingsRef = presetFund?.snapshots?.[0]?.holdings || [];
+
+            const snapshots = Object.keys(periodMap).map(d => {
+              const rawHoldings = periodMap[d];
+              // Perform intelligent anomaly check and correction
+              const corrected = correctHoldingsWithHistory(rawHoldings, prevHoldingsRef, 50000000000, d, 15);
+              return {
+                date: d,
+                asOfDate: d,
+                holdings: corrected
+              };
+            }).sort((a, b) => new Date(b.date.replace(/\//g, "-")).getTime() - new Date(a.date.replace(/\//g, "-")).getTime());
 
             if (snapshots.length > 0) {
               resultData.push({

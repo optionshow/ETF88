@@ -285,6 +285,23 @@ export function getSavedFunds(): FundData[] {
             snapshots = Array.from(snapMap.values());
           }
 
+          // Sanitize, validate and correct every snapshot to prevent corrupt ratio or shares
+          snapshots = snapshots.map((s) => {
+            const rawH = s.holdings || [];
+            const corrected = validateAndCorrectHoldings(
+              rawH,
+              presetMatch?.snapshots?.[0]?.holdings || [],
+              fund.currentNav ? fund.currentNav * 1000000000 : 50000000000,
+              s.date || s.asOfDate
+            );
+            return {
+              ...s,
+              date: normalizeDateString(s.date || s.asOfDate),
+              asOfDate: normalizeDateString(s.asOfDate || s.date),
+              holdings: corrected,
+            };
+          });
+
           // Sort snapshots descending by date
           snapshots.sort(
             (a, b) => new Date((b.date || b.asOfDate).replace(/\//g, '-')).getTime() - new Date((a.date || a.asOfDate).replace(/\//g, '-')).getTime()
@@ -1042,20 +1059,27 @@ export async function syncAndMergeSheetsDatabase(
               const prev = existingDateMap.get(dateKey);
               const prevHasValidData = prev && Array.isArray(prev.holdings) && prev.holdings.some((h: any) => Number(h.shares) > 0 || Number(h.ratio) > 0);
 
+              const validatedHoldings = validateAndCorrectHoldings(
+                newSnap.holdings || [],
+                existingSnapshots[0]?.holdings || [],
+                fund.currentNav ? fund.currentNav * 1000000000 : 50000000000,
+                dateKey
+              );
+
               if (!prev) {
                 // App does not have this period snapshot; populate from Google Sheets
                 existingDateMap.set(dateKey, {
                   date: dateKey,
                   asOfDate: dateKey,
-                  holdings: newSnap.holdings || [],
+                  holdings: validatedHoldings,
                 });
                 totalSyncedPeriods++;
-              } else if (!prevHasValidData && newSnap.holdings && newSnap.holdings.length > 0) {
+              } else if (!prevHasValidData && validatedHoldings.length > 0) {
                 // App snapshot lacked valid shares/prices; update from Google Sheets
                 existingDateMap.set(dateKey, {
                   date: dateKey,
                   asOfDate: dateKey,
-                  holdings: newSnap.holdings || [],
+                  holdings: validatedHoldings,
                 });
               }
             }
