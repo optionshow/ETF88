@@ -331,13 +331,132 @@ export function saveFunds(funds: FundData[]): void {
   }
 }
 
+// Helper to validate and correct anomalous holdings (e.g. top 15 shares < 1000 or ratio > 50%)
+export function validateAndCorrectHoldings(
+  holdings: any[],
+  prevHoldings: any[] = [],
+  nav: number = 0,
+  targetDate: string = '2026/08/05',
+  maxCheck = 15
+): any[] {
+  if (!holdings || holdings.length === 0) {
+    return (prevHoldings || []).map((h, idx) => ({
+      ...h,
+      id: `corrected_${idx + 1}`,
+      date: targetDate,
+    }));
+  }
+
+  const prevMap = new Map<string, any>();
+  (prevHoldings || []).forEach((ph) => {
+    const code = (ph.stockCode || (ph.stockName && ph.stockName.match(/(\d{4,6})/)?.[1]) || '').trim();
+    const name = (ph.stockName || '')
+      .replace(/\*/g, '')
+      .replace(/\(\s*\d+\s*\)/g, '')
+      .replace(/\d{4,6}/g, '')
+      .trim();
+    if (code) prevMap.set(code, ph);
+    if (name) prevMap.set(name, ph);
+  });
+
+  const checkCount = Math.min(maxCheck, holdings.length);
+
+  return holdings.map((item, idx) => {
+    if (idx >= checkCount) return item;
+
+    const code = (item.stockCode || (item.stockName && item.stockName.match(/(\d{4,6})/)?.[1]) || '').trim();
+    const name = (item.stockName || '')
+      .replace(/\*/g, '')
+      .replace(/\(\s*\d+\s*\)/g, '')
+      .replace(/\d{4,6}/g, '')
+      .trim();
+    const prevItem = (code && prevMap.get(code)) || (name && prevMap.get(name));
+
+    let shares = Number(item.shares || 0);
+    let ratio = Number(item.ratio || 0);
+    let price = Number(item.price || 0);
+
+    // Check shares < 1000
+    if (shares < 1000) {
+      if (
+        shares > 0 &&
+        prevItem &&
+        prevItem.shares &&
+        Math.abs(shares * 1000 - prevItem.shares) / prevItem.shares < 0.5
+      ) {
+        shares = shares * 1000;
+      } else if (prevItem && Number(prevItem.shares) >= 1000) {
+        // Holding shares do not suddenly change drastically
+        shares = Number(prevItem.shares);
+      } else if (price > 0 && nav > 0 && ratio > 0) {
+        shares = Math.round((nav * (ratio / 100)) / price);
+      } else if (shares < 1000 && shares > 0) {
+        shares = shares * 1000;
+      }
+    }
+
+    // Check ratio > 50% or <= 0%
+    if (ratio > 50) {
+      if (
+        ratio / 10 > 0 &&
+        ratio / 10 <= 30 &&
+        (!prevItem || Math.abs(ratio / 10 - prevItem.ratio) < 5)
+      ) {
+        ratio = +(ratio / 10).toFixed(2);
+      } else if (
+        ratio / 100 > 0 &&
+        ratio / 100 <= 30 &&
+        (!prevItem || Math.abs(ratio / 100 - prevItem.ratio) < 5)
+      ) {
+        ratio = +(ratio / 100).toFixed(2);
+      } else if (prevItem && Number(prevItem.ratio) > 0 && Number(prevItem.ratio) < 50) {
+        ratio = Number(prevItem.ratio);
+      } else if (shares > 0 && price > 0 && nav > 0) {
+        ratio = +(((shares * price) / nav) * 100).toFixed(2);
+      }
+    } else if (ratio <= 0) {
+      if (prevItem && Number(prevItem.ratio) > 0) {
+        ratio = Number(prevItem.ratio);
+      } else if (shares > 0 && price > 0 && nav > 0) {
+        ratio = +(((shares * price) / nav) * 100).toFixed(2);
+      }
+    }
+
+    const finalPrice = price || prevItem?.price || 500;
+    const finalMv = finalPrice && shares ? Math.round(finalPrice * shares) : item.marketValue || 0;
+
+    return {
+      ...item,
+      shares,
+      sharesFormatted: shares.toLocaleString(),
+      ratio,
+      price: finalPrice,
+      marketValue: finalMv,
+      date: item.date || targetDate,
+    };
+  });
+}
+
 // Scrape live fund from backend endpoint
 export async function fetchLiveFundData(fundCodeOrUrl: string, existingFund?: FundData): Promise<FundData | null> {
   try {
+    const officialMeta = getOfficialMetadata(fundCodeOrUrl);
+    const searchCode = officialMeta?.code || fundCodeOrUrl;
+    const savedFund = getSavedFunds().find(
+      (f) =>
+        f.code.toUpperCase().trim() === searchCode.toUpperCase().trim() ||
+        f.id.toUpperCase().trim() === searchCode.toUpperCase().trim()
+    );
+    const targetExisting = existingFund || savedFund;
+
     const res = await fetch('/api/scrape-fund', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fundCode: fundCodeOrUrl, fundUrl: fundCodeOrUrl }),
+      body: JSON.stringify({
+        fundCode: fundCodeOrUrl,
+        fundUrl: fundCodeOrUrl,
+        existingFund: targetExisting,
+      }),
     });
 
     const resText = await res.text();
@@ -350,16 +469,25 @@ export async function fetchLiveFundData(fundCodeOrUrl: string, existingFund?: Fu
 
     if (result.success && result.data) {
       const scraped = result.data;
-      const officialMeta = getOfficialMetadata(scraped.fundCode || fundCodeOrUrl);
-      const savedFund = getSavedFunds().find((f) => f.code.toUpperCase().trim() === (officialMeta?.code || scraped.fundCode).toUpperCase().trim() || f.id.toUpperCase().trim() === (officialMeta?.code || scraped.fundCode).toUpperCase().trim());
-      const existing = existingFund || savedFund;
+      const meta = getOfficialMetadata(scraped.fundCode || fundCodeOrUrl);
+      const existing = targetExisting;
 
       const normDate = normalizeDateString(scraped.asOfDate || new Date().toISOString().slice(0, 10).replace(/-/g, '/'));
+
+      // Validate & correct top 15 holdings referencing previous snapshot
+      const prevHoldings = existing?.snapshots?.[0]?.holdings || [];
+      const correctedHoldings = validateAndCorrectHoldings(
+        scraped.holdings || [],
+        prevHoldings,
+        (scraped.totalAssetsMillion || 50000) * 1000000,
+        normDate,
+        15
+      );
 
       const newSnapshot = {
         date: normDate,
         asOfDate: normDate,
-        holdings: scraped.holdings || [],
+        holdings: correctedHoldings,
       };
 
       const snapMap = new Map<string, any>();

@@ -6,6 +6,7 @@ import cron from "node-cron";
 import iconv from "iconv-lite";
 import { createServer as createViteServer } from "vite";
 import { generateGoogleScript } from "./src/utils/googleScriptGenerator";
+import { INITIAL_FUNDS } from "./src/data/presetFunds";
 
 const app = express();
 const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
@@ -56,14 +57,20 @@ async function executeAutoScrapeAll() {
   }
 
   try {
-    const cp982 = await fetchCapitalFund("399");
+    const cp982 = await fetchCapitalFund(
+      "399",
+      INITIAL_FUNDS.find((f) => f.code.includes("00982A"))
+    );
     if (cp982) results.push(cp982);
   } catch (e) {
     console.error("[Scraper Engine] 00982A scrape error:", e);
   }
 
   try {
-    const cp992 = await fetchCapitalFund("500");
+    const cp992 = await fetchCapitalFund(
+      "500",
+      INITIAL_FUNDS.find((f) => f.code.includes("00992A"))
+    );
     if (cp992) results.push(cp992);
   } catch (e) {
     console.error("[Scraper Engine] 00992A scrape error:", e);
@@ -316,91 +323,316 @@ async function fetchEzMoneyFund(urlOrCode: string) {
   }
 }
 
-// Helper function for Capital Fund (群益投信 00982A / 00992A) crawler
-async function fetchCapitalFund(fundIdOrUrl: string = "399") {
-  try {
-    let fundId = "399";
-    let code4Digit = "00982A.TW";
-    let cpName = "群益台灣強棒";
-    let cpUrl = "https://www.capitalfund.com.tw/etf/product/detail/399/portfolio";
+// Validation function to check if holdings in top 15 have anomalies
+function checkHoldingsAnomaly(holdings: any[], maxCheck = 15): { isInvalid: boolean; reasons: string[] } {
+  const reasons: string[] = [];
+  if (!holdings || holdings.length === 0) {
+    return { isInvalid: true, reasons: ["持股明細為空"] };
+  }
+  const checkCount = Math.min(maxCheck, holdings.length);
+  for (let i = 0; i < checkCount; i++) {
+    const h = holdings[i];
+    const shares = Number(h.shares || 0);
+    const ratio = Number(h.ratio || 0);
+    const name = h.stockName || `第${i + 1}檔`;
 
-    if (fundIdOrUrl.includes("500") || fundIdOrUrl.includes("00992A")) {
-      fundId = "500";
-      code4Digit = "00992A.TW";
-      cpName = "群益科技創新";
-      cpUrl = "https://www.capitalfund.com.tw/etf/product/detail/500/portfolio";
-    } else if (fundIdOrUrl.includes("399") || fundIdOrUrl.includes("00982A")) {
-      fundId = "399";
-      code4Digit = "00982A.TW";
-      cpName = "群益台灣強棒";
-      cpUrl = "https://www.capitalfund.com.tw/etf/product/detail/399/portfolio";
+    // Rule: 投資股數少於 1000 股
+    if (shares < 1000) {
+      reasons.push(`${name} 股數 (${shares}) 少於 1000`);
+    }
+    // Rule: 持股比例大於 50% 或 小於等於 0%
+    if (ratio > 50) {
+      reasons.push(`${name} 持股比例 (${ratio}%) 大於 50%`);
+    } else if (ratio <= 0) {
+      reasons.push(`${name} 持股比例 (${ratio}%) 小於等於 0%`);
+    }
+  }
+  return { isInvalid: reasons.length > 0, reasons };
+}
+
+// Correction helper referencing previous snapshot data ("不會忽然差異很大")
+function correctHoldingsWithHistory(
+  holdings: any[],
+  prevHoldings: any[] = [],
+  nav: number = 0,
+  targetDate: string = "2026/08/05",
+  maxCheck = 15
+): any[] {
+  if (!holdings || holdings.length === 0) {
+    return (prevHoldings || []).map((h, idx) => ({
+      ...h,
+      id: `corrected_${idx + 1}`,
+      date: targetDate,
+    }));
+  }
+
+  // Create lookup map of previous holdings
+  const prevMap = new Map<string, any>();
+  (prevHoldings || []).forEach((ph) => {
+    const code = (ph.stockCode || (ph.stockName && ph.stockName.match(/(\d{4,6})/)?.[1]) || "").trim();
+    const name = (ph.stockName || "")
+      .replace(/\*/g, "")
+      .replace(/\(\s*\d+\s*\)/g, "")
+      .replace(/\d{4,6}/g, "")
+      .trim();
+    if (code) prevMap.set(code, ph);
+    if (name) prevMap.set(name, ph);
+  });
+
+  const checkCount = Math.min(maxCheck, holdings.length);
+
+  return holdings.map((item, idx) => {
+    if (idx >= checkCount) return item;
+
+    const code = (item.stockCode || (item.stockName && item.stockName.match(/(\d{4,6})/)?.[1]) || "").trim();
+    const name = (item.stockName || "")
+      .replace(/\*/g, "")
+      .replace(/\(\s*\d+\s*\)/g, "")
+      .replace(/\d{4,6}/g, "")
+      .trim();
+    const prevItem = (code && prevMap.get(code)) || (name && prevMap.get(name));
+
+    let shares = Number(item.shares || 0);
+    let ratio = Number(item.ratio || 0);
+    let price = Number(item.price || 0);
+
+    // 1. Correct shares if < 1000
+    if (shares < 1000) {
+      if (
+        shares > 0 &&
+        prevItem &&
+        prevItem.shares &&
+        Math.abs(shares * 1000 - prevItem.shares) / prevItem.shares < 0.5
+      ) {
+        // Unit was in "張" (1,000 shares)
+        shares = shares * 1000;
+      } else if (prevItem && Number(prevItem.shares) >= 1000) {
+        // Inherit from previous snapshot since holdings don't suddenly change drastically
+        shares = Number(prevItem.shares);
+      } else if (price > 0 && nav > 0 && ratio > 0) {
+        // Calculate based on NAV and ratio
+        shares = Math.round((nav * (ratio / 100)) / price);
+      } else if (shares < 1000 && shares > 0) {
+        shares = shares * 1000;
+      }
     }
 
-    const res = execSync(
-      `curl -sL -k "https://www.capitalfund.com.tw/CFWeb/api/etf/buyback" -X POST -H "Content-Type: application/json" -H "User-Agent: Mozilla/5.0" -d '{"fundId": ${fundId}}'`,
-      { encoding: "utf-8", timeout: 10000 }
-    );
-    const json = JSON.parse(res);
-    if (!json || !json.data || !json.data.stocks) return null;
+    // 2. Correct ratio if > 50% or <= 0%
+    if (ratio > 50) {
+      if (
+        ratio / 10 > 0 &&
+        ratio / 10 <= 30 &&
+        (!prevItem || Math.abs(ratio / 10 - prevItem.ratio) < 5)
+      ) {
+        ratio = +(ratio / 10).toFixed(2);
+      } else if (
+        ratio / 100 > 0 &&
+        ratio / 100 <= 30 &&
+        (!prevItem || Math.abs(ratio / 100 - prevItem.ratio) < 5)
+      ) {
+        ratio = +(ratio / 100).toFixed(2);
+      } else if (prevItem && Number(prevItem.ratio) > 0 && Number(prevItem.ratio) < 50) {
+        ratio = Number(prevItem.ratio);
+      } else if (shares > 0 && price > 0 && nav > 0) {
+        ratio = +(((shares * price) / nav) * 100).toFixed(2);
+      }
+    } else if (ratio <= 0) {
+      if (prevItem && Number(prevItem.ratio) > 0) {
+        ratio = Number(prevItem.ratio);
+      } else if (shares > 0 && price > 0 && nav > 0) {
+        ratio = +(((shares * price) / nav) * 100).toFixed(2);
+      }
+    }
 
-    const pcf = json.data.pcf || {};
-    const dateStr = pcf.date2 ? pcf.date2.replace(/-/g, "/") : "2026/08/05";
-    const nav = pcf.nav || 0;
-
-    const rawStocks = json.data.stocks || [];
-    let tsmcIdx = rawStocks.findIndex((item: any) =>
-      (item.stocNo === "2330") || (item.stocName && item.stocName.includes("台積電"))
-    );
-    if (tsmcIdx < 0) tsmcIdx = 0;
-
-    const tsmcItem = rawStocks[tsmcIdx];
-    const tsmcRatio = tsmcItem ? Number(tsmcItem.weightRound || tsmcItem.weight || 100) : 100;
-
-    const filteredStocks = rawStocks
-      .slice(tsmcIdx)
-      .filter((item: any) => {
-        const ratio = Number(item.weightRound || item.weight || 0);
-        return ratio <= tsmcRatio && ratio >= 1.0;
-      })
-      .slice(0, 20);
-
-    const stockCodes = filteredStocks.map((x: any) => x.stocNo).filter(Boolean);
-    const livePrices = await fetchBatchStockPrices(stockCodes);
-
-    const holdings = filteredStocks.map((item: any, idx: number) => {
-      const cleanName = item.stocName.replace(/\*/g, "").trim();
-      const code = item.stocNo;
-      const ratio = Number(item.weightRound || item.weight.toFixed(2));
-      const liveP = livePrices[code]?.price;
-      const estPrice = nav > 0 && item.share > 0 ? Math.round((nav * (item.weight / 100)) / item.share) : 0;
-      const price = liveP || estPrice;
-      const marketValue = price && item.share ? (price * item.share) : Math.round(nav * (item.weight / 100));
-
-      return {
-        id: `cp_${idx + 1}`,
-        stockName: `${cleanName} (${code})`,
-        stockCode: code,
-        shares: item.share,
-        sharesFormatted: item.shareFormat || item.share.toLocaleString(),
-        ratio,
-        date: dateStr,
-        price,
-        marketValue
-      };
-    });
+    // Recalculate market value and formatting
+    const finalPrice = price || prevItem?.price || 500;
+    const finalMv = finalPrice && shares ? Math.round(finalPrice * shares) : item.marketValue || 0;
 
     return {
-      fundCode: code4Digit,
-      fundName: cpName,
-      url: cpUrl,
-      asOfDate: dateStr,
-      totalAssetsMillion: Math.round(nav / 1000000),
-      holdings
+      ...item,
+      shares,
+      sharesFormatted: shares.toLocaleString(),
+      ratio,
+      price: finalPrice,
+      marketValue: finalMv,
+      date: item.date || targetDate,
     };
-  } catch (err) {
-    console.error("[Scraper] CapitalFund error:", err);
-    return null;
+  });
+}
+
+// Helper function for Capital Fund (群益投信 00982A / 00992A) crawler with Retry & History Correction
+async function fetchCapitalFund(fundIdOrUrl: string = "399", existingFundData?: any) {
+  let fundId = "399";
+  let code4Digit = "00982A.TW";
+  let cpName = "群益台灣強棒";
+  let cpUrl = "https://www.capitalfund.com.tw/etf/product/detail/399/portfolio";
+
+  if (fundIdOrUrl.includes("500") || fundIdOrUrl.includes("00992A")) {
+    fundId = "500";
+    code4Digit = "00992A.TW";
+    cpName = "群益科技創新";
+    cpUrl = "https://www.capitalfund.com.tw/etf/product/detail/500/portfolio";
+  } else if (fundIdOrUrl.includes("399") || fundIdOrUrl.includes("00982A")) {
+    fundId = "399";
+    code4Digit = "00982A.TW";
+    cpName = "群益台灣強棒";
+    cpUrl = "https://www.capitalfund.com.tw/etf/product/detail/399/portfolio";
   }
+
+  // Retrieve previous holdings for reference (不會忽然差異很大)
+  const presetRef = INITIAL_FUNDS.find(
+    (f) => f.code.toUpperCase().trim() === code4Digit.toUpperCase().trim()
+  );
+  const prevHoldings: any[] =
+    existingFundData?.snapshots?.[0]?.holdings ||
+    presetRef?.snapshots?.[0]?.holdings ||
+    [];
+
+  const maxAttempts = 3;
+  let lastError: any = null;
+  let lastScrapedHoldings: any[] = [];
+  let lastDateStr = "2026/08/05";
+  let lastNav = 0;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      console.log(`[Scraper] CapitalFund (${code4Digit}) attempt ${attempt}/${maxAttempts}...`);
+      const res = execSync(
+        `curl -sL -k "https://www.capitalfund.com.tw/CFWeb/api/etf/buyback" -X POST -H "Content-Type: application/json" -H "User-Agent: Mozilla/5.0" -d '{"fundId": ${fundId}}'`,
+        { encoding: "utf-8", timeout: 10000 }
+      );
+      const json = JSON.parse(res);
+      if (!json || !json.data || !json.data.stocks) {
+        throw new Error("Invalid API response format from CapitalFund");
+      }
+
+      const pcf = json.data.pcf || {};
+      const dateStr = pcf.date2 ? pcf.date2.replace(/-/g, "/") : "2026/08/05";
+      const nav = pcf.nav || 0;
+      lastDateStr = dateStr;
+      lastNav = nav;
+
+      const rawStocks = json.data.stocks || [];
+      let tsmcIdx = rawStocks.findIndex(
+        (item: any) =>
+          item.stocNo === "2330" || (item.stocName && item.stocName.includes("台積電"))
+      );
+      if (tsmcIdx < 0) tsmcIdx = 0;
+
+      const tsmcItem = rawStocks[tsmcIdx];
+      const tsmcRatio = tsmcItem ? Number(tsmcItem.weightRound || tsmcItem.weight || 100) : 100;
+
+      const filteredStocks = rawStocks
+        .slice(tsmcIdx)
+        .filter((item: any) => {
+          const ratio = Number(item.weightRound || item.weight || 0);
+          return ratio <= tsmcRatio && ratio >= 1.0;
+        })
+        .slice(0, 20);
+
+      const stockCodes = filteredStocks.map((x: any) => x.stocNo).filter(Boolean);
+      const livePrices = await fetchBatchStockPrices(stockCodes);
+
+      const holdings = filteredStocks.map((item: any, idx: number) => {
+        const cleanName = item.stocName.replace(/\*/g, "").trim();
+        const code = item.stocNo;
+        const ratio = Number(item.weightRound || item.weight.toFixed(2));
+        const liveP = livePrices[code]?.price;
+        const estPrice =
+          nav > 0 && item.share > 0 ? Math.round((nav * (item.weight / 100)) / item.share) : 0;
+        const price = liveP || estPrice;
+        const marketValue =
+          price && item.share ? price * item.share : Math.round(nav * (item.weight / 100));
+
+        return {
+          id: `cp_${idx + 1}`,
+          stockName: `${cleanName} (${code})`,
+          stockCode: code,
+          shares: item.share,
+          sharesFormatted: item.shareFormat || item.share.toLocaleString(),
+          ratio,
+          date: dateStr,
+          price,
+          marketValue,
+        };
+      });
+
+      lastScrapedHoldings = holdings;
+
+      // Anomaly Check: 前 15 個股之投資股數少於 1000 或 持股比例大於 50%
+      const anomaly = checkHoldingsAnomaly(holdings, 15);
+      if (!anomaly.isInvalid) {
+        console.log(`[Scraper] CapitalFund (${code4Digit}) successfully scraped ${holdings.length} holdings (Anomaly check passed).`);
+        return {
+          fundCode: code4Digit,
+          fundName: cpName,
+          url: cpUrl,
+          asOfDate: dateStr,
+          totalAssetsMillion: Math.round(nav / 1000000),
+          holdings,
+        };
+      }
+
+      console.warn(
+        `[Scraper] CapitalFund (${code4Digit}) attempt ${attempt} detected anomalies: ${anomaly.reasons.slice(0, 3).join("; ")}`
+      );
+
+      if (attempt < maxAttempts) {
+        // Sleep 800ms before retrying
+        try {
+          execSync("sleep 0.8");
+        } catch {}
+      }
+    } catch (err: any) {
+      lastError = err;
+      console.warn(`[Scraper] CapitalFund (${code4Digit}) attempt ${attempt} error:`, err.message);
+      if (attempt < maxAttempts) {
+        try {
+          execSync("sleep 0.8");
+        } catch {}
+      }
+    }
+  }
+
+  // If retry exceeded or anomalies detected, execute intelligent correction referencing previous data
+  console.log(
+    `[Scraper] Applying intelligent historical data correction for CapitalFund (${code4Digit}) referencing previous snapshot...`
+  );
+
+  let finalHoldings = correctHoldingsWithHistory(
+    lastScrapedHoldings,
+    prevHoldings,
+    lastNav,
+    lastDateStr,
+    15
+  );
+
+  // If finalHoldings is still empty or too few, fallback entirely to previous holdings with updated prices and date
+  if (!finalHoldings || finalHoldings.length < 5) {
+    console.warn(`[Scraper] CapitalFund (${code4Digit}) falling back to previous healthy snapshot with live prices.`);
+    const fallbackCodes = (prevHoldings || []).map((h: any) => h.stockCode).filter(Boolean);
+    const livePMap = await fetchBatchStockPrices(fallbackCodes);
+    finalHoldings = (prevHoldings || []).map((h: any, idx: number) => {
+      const p = livePMap[h.stockCode]?.price || h.price || 500;
+      return {
+        ...h,
+        id: `cp_fb_${idx + 1}`,
+        date: lastDateStr,
+        price: p,
+        marketValue: p && h.shares ? Math.round(p * h.shares) : h.marketValue,
+      };
+    });
+  }
+
+  return {
+    fundCode: code4Digit,
+    fundName: cpName,
+    url: cpUrl,
+    asOfDate: lastDateStr,
+    totalAssetsMillion: Math.round(lastNav / 1000000) || 50000,
+    holdings: finalHoldings,
+    isCorrected: true,
+  };
 }
 
 // Helper function for KGI Fund (凱基投信 00407A / J024) crawler
@@ -505,7 +737,7 @@ async function fetchKgiFund(fundId: string = "J024") {
 // API: Scrape MoneyDJ / EzMoney / CapitalFund / KGIFund Details live
 app.post("/api/scrape-fund", async (req, res) => {
   try {
-    const { fundUrl, fundCode } = req.body;
+    const { fundUrl, fundCode, existingFund } = req.body;
     let targetCode = (fundCode || "").trim().toUpperCase();
     
     // Check if kgifund URL or 00407A / J024
@@ -524,7 +756,7 @@ app.post("/api/scrape-fund", async (req, res) => {
       } else if (targetCode === "00982A.TW" || targetCode === "00982A" || targetCode === "399" || (fundUrl && fundUrl.includes("399"))) {
         fundIdToFetch = "399";
       }
-      const cpResult = await fetchCapitalFund(fundIdToFetch);
+      const cpResult = await fetchCapitalFund(fundIdToFetch, existingFund);
       if (cpResult) {
         return res.json({ success: true, data: cpResult });
       }

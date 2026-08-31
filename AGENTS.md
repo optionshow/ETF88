@@ -31,12 +31,15 @@
    * **資料日期 (`asOfDate`)**: `data.pcf.date2` (如 `2026-08-03` 轉換為 `2026/08/03`)。
    * **總淨值 (`NAV`)**: `data.pcf.nav` (新台幣元)。
    * **持股清單**: `data.stocks` 陣列（取前 1~20 權重股票）。
-3. **單筆持股精算**:
+3. **單筆持股精算與異常檢驗機制 (Validation & Self-Correction Rule)**:
    * **股票名稱 (`stockName`)**: `item.stocName` (去除字尾符號 `*`) + `(` + `item.stocNo` + `)`。
    * **股票代碼 (`stockCode`)**: `item.stocNo`。
    * **持有股數 (`shares`)**: `item.share` (千位號格式化 `item.shareFormat`)。
    * **持股權重 (%) (`ratio`)**: `item.weightRound` 或 `item.weight` (四捨五入兩位小數)。
    * **預估單價 (`price`)**: `Math.round((NAV * (weight / 100)) / share)`。
+   * **異常檢驗與重試**:
+     * 檢查前 15 檔持股：若「投資股數少於 1000」或「持股比例大於 50% / 小於等於 0%」，判定為抓取異常，系統自動重試最多 3 次。
+     * 若多次重試後仍有異常個股，自動參考前一次（歷史期別）正常數據進行補正與平滑修正（因基金持股不會忽劇烈異常跳動），確保資料連續性與正確性。
 
 ### 2.3 凱基台灣精選強棒 (00407A)
 1. **請求官方頁面**: `GET https://www.kgifund.com.tw/Fund/Detail?fundID=J024`，帶 `User-Agent` 標頭。
