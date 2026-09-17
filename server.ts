@@ -1271,6 +1271,14 @@ function doPost(e) {
     var fundList = data.fundDataList || [];
     var ss = SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
     
+    // 徹底刪除廢棄的「系統紀錄Log」工作表
+    try {
+      var legacyLogSheet = ss.getSheetByName("系統紀錄Log");
+      if (legacyLogSheet) {
+        ss.deleteSheet(legacyLogSheet);
+      }
+    } catch (eLog) {}
+
     var now = new Date();
     var cutoffTime = now.getTime() - (60 * 24 * 60 * 60 * 1000); // 60天前
 
@@ -1400,11 +1408,11 @@ function doPost(e) {
         uploadTimeSheet = ss.insertSheet("最新上傳時間");
       }
       uploadTimeSheet.clearContents();
-      uploadTimeSheet.getRange(1, 1, 1, 3).setValues([["最新上傳時間", "上傳基金數量", "最後系統紀錄時間"]]);
-      uploadTimeSheet.getRange(1, 1, 1, 3).setFontWeight("bold").setBackground("#EFEFEF");
-      uploadTimeSheet.getRange(2, 1, 1, 3).setValues([[uploadTimeVal, fundList.length, nowTaipeiStr]]);
-      uploadTimeSheet.getRange(2, 1, 1, 3).setNumberFormat("@");
-      uploadTimeSheet.autoResizeColumns(1, 3);
+      uploadTimeSheet.getRange(1, 1, 1, 2).setValues([["最新上傳時間", "上傳基金數量"]]);
+      uploadTimeSheet.getRange(1, 1, 1, 2).setFontWeight("bold").setBackground("#EFEFEF");
+      uploadTimeSheet.getRange(2, 1, 1, 2).setValues([[uploadTimeVal, fundList.length]]);
+      uploadTimeSheet.getRange(2, 1, 1, 2).setNumberFormat("@");
+      uploadTimeSheet.autoResizeColumns(1, 2);
     } catch (eTime) {}
 
     return ContentService.createTextOutput(JSON.stringify({
@@ -1429,6 +1437,14 @@ function updateFundDetails() {
   } catch (e) {
     ss = SpreadsheetApp.getActiveSpreadsheet();
   }
+
+  // 徹底刪除廢棄的「系統紀錄Log」工作表
+  try {
+    var legacyLogSheet = ss.getSheetByName("系統紀錄Log");
+    if (legacyLogSheet) {
+      ss.deleteSheet(legacyLogSheet);
+    }
+  } catch (eLog) {}
   
   var now = new Date();
   var cutoffTime = now.getTime() - (60 * 24 * 60 * 60 * 1000);

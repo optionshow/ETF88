@@ -6,6 +6,8 @@ import { FundDetailView } from './components/FundDetailView';
 import { HoldingChangesView } from './components/HoldingChangesView';
 import { OverlapAnalysisView } from './components/OverlapAnalysisView';
 import { Top5TrackingView } from './components/Top5TrackingView';
+import { ExportModal } from './components/ExportModal';
+import { ImportModal } from './components/ImportModal';
 import { AlertCircle, CheckCircle2 } from 'lucide-react';
 
 export default function App() {
@@ -15,6 +17,8 @@ export default function App() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [toastMessage, setToastMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
   const [sheetsLastUpdated, setSheetsLastUpdated] = useState<string>('2026/08/05 18:00');
+  const [isExportOpen, setIsExportOpen] = useState(false);
+  const [isImportOpen, setIsImportOpen] = useState(false);
 
   const getDatabaseLastUpdatedTime = (fundList: FundData[]): string => {
     try {
@@ -377,6 +381,39 @@ export default function App() {
     return false;
   };
 
+  const handleImportSuccess = async (
+    updatedFunds: FundData[],
+    message: string,
+    syncToSheets = false
+  ) => {
+    setIsRefreshing(true);
+    try {
+      let fundsWithPrices = updatedFunds;
+      try {
+        fundsWithPrices = await fetchAndUpdateLiveStockPrices(updatedFunds);
+      } catch (e) {
+        console.warn('Post-import stock price update failed:', e);
+      }
+
+      setFunds(fundsWithPrices);
+      saveFunds(fundsWithPrices);
+      setSheetsLastUpdated(getDatabaseLastUpdatedTime(fundsWithPrices));
+      showToast(message);
+
+      if (syncToSheets) {
+        try {
+          await pushAppDataToSheets(fundsWithPrices);
+          showToast(`✅ 資料已成功匯入網頁並同步推送至 Google 雲端試算表！`);
+        } catch (e: any) {
+          console.warn('Sync to sheets error:', e);
+          showToast(`已成功匯入網頁，但試算表推送提示: ${e.message}`);
+        }
+      }
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
+
   const hasTodayData = isFundsTodayData(funds);
 
   return (
@@ -408,6 +445,8 @@ export default function App() {
         onRefreshAll={handleRefreshAll}
         onUploadToSheets={handleUploadToSheets}
         onDownloadFromSheets={handleDownloadFromSheets}
+        onOpenExport={() => setIsExportOpen(true)}
+        onOpenImport={() => setIsImportOpen(true)}
         sheetsLastUpdated={sheetsLastUpdated}
         isRefreshing={isRefreshing}
         hasTodayData={hasTodayData}
@@ -448,6 +487,31 @@ export default function App() {
 
         {activeTab === 'top5' && <Top5TrackingView funds={funds} />}
       </main>
+
+      {/* Export Modal */}
+      <ExportModal
+        isOpen={isExportOpen}
+        onClose={() => setIsExportOpen(false)}
+        funds={funds}
+        selectedFundId={selectedFundId}
+        onSwitchToImport={() => {
+          setIsExportOpen(false);
+          setIsImportOpen(true);
+        }}
+      />
+
+      {/* Import Modal */}
+      <ImportModal
+        isOpen={isImportOpen}
+        onClose={() => setIsImportOpen(false)}
+        funds={funds}
+        selectedFundId={selectedFundId}
+        onImportSuccess={handleImportSuccess}
+        onSwitchToExport={() => {
+          setIsImportOpen(false);
+          setIsExportOpen(true);
+        }}
+      />
 
       {/* Footer */}
       <footer className="border-t border-slate-200 bg-white py-4 text-center text-slate-500 text-xs mt-auto">

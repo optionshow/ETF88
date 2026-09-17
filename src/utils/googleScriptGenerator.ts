@@ -305,6 +305,14 @@ function doPost(e) {
     var fundList = data.fundDataList || [];
     var ss = SPREADSHEET_ID ? SpreadsheetApp.openById(SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
     
+    // 徹底刪除廢棄的「系統紀錄Log」工作表，保持資料庫乾淨純粹
+    try {
+      var legacyLogSheet = ss.getSheetByName("系統紀錄Log");
+      if (legacyLogSheet) {
+        ss.deleteSheet(legacyLogSheet);
+      }
+    } catch (eLog) {}
+
     var now = new Date();
     var cutoffTime = now.getTime() - (60 * 24 * 60 * 60 * 1000); // 60天前
 
@@ -475,6 +483,14 @@ function updateFundDetails() {
     ss = SpreadsheetApp.getActiveSpreadsheet();
   }
   
+  // 徹底刪除廢棄的「系統紀錄Log」工作表
+  try {
+    var legacyLogSheet = ss.getSheetByName("系統紀錄Log");
+    if (legacyLogSheet) {
+      ss.deleteSheet(legacyLogSheet);
+    }
+  } catch (eLog) {}
+
   var now = new Date();
   var cutoffTime = now.getTime() - (60 * 24 * 60 * 60 * 1000);
 

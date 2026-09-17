@@ -8,6 +8,8 @@ import {
   Upload,
   Download,
   Clock,
+  FileDown,
+  FileUp,
 } from 'lucide-react';
 
 interface NavbarProps {
@@ -16,6 +18,8 @@ interface NavbarProps {
   onRefreshAll: () => void;
   onUploadToSheets: () => void;
   onDownloadFromSheets: () => void;
+  onOpenExport: () => void;
+  onOpenImport: () => void;
   sheetsLastUpdated: string;
   isRefreshing: boolean;
   hasTodayData?: boolean;
@@ -27,6 +31,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onRefreshAll,
   onUploadToSheets,
   onDownloadFromSheets,
+  onOpenExport,
+  onOpenImport,
   sheetsLastUpdated,
   isRefreshing,
   hasTodayData = false,
@@ -56,6 +62,26 @@ export const Navbar: React.FC<NavbarProps> = ({
 
           {/* Action Buttons */}
           <div className="flex items-center space-x-1.5 sm:space-x-2 flex-nowrap">
+            {/* 匯出 (方便在試算表匯入更新或備份) */}
+            <button
+              onClick={onOpenExport}
+              className="inline-flex items-center space-x-1 px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-md bg-indigo-600 hover:bg-indigo-700 text-white shadow-2xs transition-colors cursor-pointer"
+              title="匯出持股資料 (CSV/JSON，方便在試算表匯入更新或備份)"
+            >
+              <FileDown className="w-3.5 h-3.5" />
+              <span className="inline">匯出</span>
+            </button>
+
+            {/* 匯入 (匯入試算表表格或備份檔更新網頁) */}
+            <button
+              onClick={onOpenImport}
+              className="inline-flex items-center space-x-1 px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-md bg-teal-600 hover:bg-teal-700 text-white shadow-2xs transition-colors cursor-pointer"
+              title="匯入試算表表格或備份檔 (更新網頁資料)"
+            >
+              <FileUp className="w-3.5 h-3.5" />
+              <span className="inline">匯入</span>
+            </button>
+
             {/* 上傳資料 */}
             <button
               onClick={onUploadToSheets}
@@ -64,7 +90,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               title="目前網頁資料上傳到試算表"
             >
               <Upload className="w-3.5 h-3.5" />
-              <span className="hidden md:inline">上傳資料</span>
+              <span className="hidden md:inline">上傳試算表</span>
             </button>
 
             {/* 下載資料 */}
@@ -75,17 +101,17 @@ export const Navbar: React.FC<NavbarProps> = ({
               title="試算表資料下載到網頁"
             >
               <Download className="w-3.5 h-3.5" />
-              <span className="hidden md:inline">下載資料</span>
+              <span className="hidden md:inline">下載試算表</span>
             </button>
 
             {/* 資料庫時間 */}
             <div
-              className="inline-flex items-center space-x-1 px-2.5 sm:px-3 py-1.5 text-xs font-semibold rounded-md bg-slate-100 text-slate-700 border border-slate-200 shadow-2xs"
+              className="inline-flex items-center space-x-1 px-2 sm:px-2.5 py-1.5 text-xs font-semibold rounded-md bg-slate-100 text-slate-700 border border-slate-200 shadow-2xs"
               title="資料庫時間"
             >
               <Clock className="w-3.5 h-3.5 text-slate-500" />
               <span>
-                <span className="hidden md:inline">資料庫時間：</span><strong className="font-mono text-slate-900">{sheetsLastUpdated}</strong>
+                <span className="hidden xl:inline">資料庫時間：</span><strong className="font-mono text-slate-900">{sheetsLastUpdated}</strong>
               </span>
             </div>
 
