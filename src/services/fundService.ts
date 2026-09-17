@@ -155,6 +155,8 @@ export function getOfficialMetadata(str: string) {
   return null;
 }
 
+export const MAX_SNAPSHOT_DAYS = 30; // 系統最多容納 30 天歷史期別（包括今天）
+
 export function isAug3Date(dStr?: string): boolean {
   if (!dStr) return false;
   const norm = normalizeDateString(dStr);
@@ -176,7 +178,11 @@ export function deduplicateFunds(funds: FundData[]): FundData[] {
         date: normalizeDateString(s.date || s.asOfDate),
         asOfDate: normalizeDateString(s.asOfDate || s.date),
         holdings: deduplicateSnapshotHoldings(s.holdings || []),
-      }));
+      }))
+      .sort(
+        (a, b) => new Date(b.date.replace(/\//g, '-')).getTime() - new Date(a.date.replace(/\//g, '-')).getTime()
+      )
+      .slice(0, MAX_SNAPSHOT_DAYS);
 
     if (!map.has(key)) {
       map.set(key, {
@@ -212,7 +218,7 @@ export function deduplicateFunds(funds: FundData[]): FundData[] {
 
       const mergedSnaps = Array.from(snapMap.values()).sort(
         (a, b) => new Date((b.date || b.asOfDate).replace(/\//g, '-')).getTime() - new Date((a.date || a.asOfDate).replace(/\//g, '-')).getTime()
-      );
+      ).slice(0, MAX_SNAPSHOT_DAYS);
 
       map.set(key, {
         ...existingFund,
@@ -238,7 +244,17 @@ export function deduplicateFunds(funds: FundData[]): FundData[] {
     }
   });
 
-  return Array.from(map.values());
+  return Array.from(map.values()).map((fund) => {
+    const sorted = (fund.snapshots || []).sort(
+      (a, b) => new Date((b.date || b.asOfDate).replace(/\//g, '-')).getTime() - new Date((a.date || a.asOfDate).replace(/\//g, '-')).getTime()
+    ).slice(0, MAX_SNAPSHOT_DAYS);
+    return {
+      ...fund,
+      asOfDate: sorted[0]?.asOfDate || sorted[0]?.date || fund.asOfDate,
+      navDate: sorted[0]?.asOfDate || sorted[0]?.date || fund.navDate,
+      snapshots: sorted,
+    };
+  });
 }
 
 export function getSavedFunds(): FundData[] {
@@ -302,10 +318,11 @@ export function getSavedFunds(): FundData[] {
             };
           });
 
-          // Sort snapshots descending by date
+          // Sort snapshots descending by date and cap at MAX_SNAPSHOT_DAYS (30)
           snapshots.sort(
             (a, b) => new Date((b.date || b.asOfDate).replace(/\//g, '-')).getTime() - new Date((a.date || a.asOfDate).replace(/\//g, '-')).getTime()
           );
+          snapshots = snapshots.slice(0, MAX_SNAPSHOT_DAYS);
 
           return {
             ...fund,
@@ -532,7 +549,7 @@ export async function fetchLiveFundData(fundCodeOrUrl: string, existingFund?: Fu
         asOfDate: normalizeDateString(s.asOfDate || s.date),
       })).sort(
         (a, b) => new Date(b.date.replace(/\//g, '-')).getTime() - new Date(a.date.replace(/\//g, '-')).getTime()
-      );
+      ).slice(0, MAX_SNAPSHOT_DAYS);
 
       const latestDate = updatedSnapshots[0]?.asOfDate || normDate;
 
@@ -681,6 +698,11 @@ export function calculateStockOverlap(funds: FundData[]): StockOverlap[] {
         .replace(/\(\s*\d+\s*\)/g, '')
         .replace(/\d{4,6}/g, '')
         .trim();
+
+      // 嚴格過濾：僅納入上市櫃個股（排除 ETF 代號如 00 開頭、債券、期貨、權證等非個股資產）
+      if (code.startsWith('00') || /ETF|債|期貨|權證|受益憑證|受益證券|現金|存款/i.test(rawName)) {
+        return;
+      }
 
       // 2. 以代碼或標準名稱作為去重合併的主鍵
       const key = code ? code.toUpperCase() : pureChineseName;
@@ -1092,7 +1114,7 @@ export async function syncAndMergeSheetsDatabase(
           asOfDate: normalizeDateString(s.asOfDate || s.date),
         })).sort(
           (a, b) => new Date(b.date.replace(/\//g, '-')).getTime() - new Date(a.date.replace(/\//g, '-')).getTime()
-        );
+        ).slice(0, MAX_SNAPSHOT_DAYS);
 
         const latestDate = mergedSnapshots[0]?.asOfDate || fund.asOfDate;
 
@@ -1129,7 +1151,7 @@ export async function syncAndMergeSheetsDatabase(
             asOfDate: normalizeDateString(s.asOfDate || s.date),
           })).sort(
             (a: any, b: any) => new Date(b.date.replace(/\//g, '-')).getTime() - new Date(a.date.replace(/\//g, '-')).getTime()
-          );
+          ).slice(0, MAX_SNAPSHOT_DAYS);
 
           const codeToUse = sheetMeta?.code || (sheetCode.includes('.') ? sheetCode : `${sheetCode}.TW`);
           updatedFundsList.push({

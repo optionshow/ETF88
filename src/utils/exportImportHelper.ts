@@ -14,12 +14,12 @@ export function exportFundToCsv(fund: FundData, snapshotDate?: string): string {
     return normalizeDateString(s.date || s.asOfDate) === normalizeDateString(snapshotDate);
   });
 
-  // 排序：由新到舊
+  // 排序：由新到舊，限制最多最新 30 天
   const sortedSnapshots = [...snapshots].sort((a, b) => {
     const da = normalizeDateString(a.date || a.asOfDate).replace(/\//g, '-');
     const db = normalizeDateString(b.date || b.asOfDate).replace(/\//g, '-');
     return new Date(db).getTime() - new Date(da).getTime();
-  });
+  }).slice(0, 30);
 
   sortedSnapshots.forEach((snap) => {
     const dateStr = normalizeDateString(snap.date || snap.asOfDate);
@@ -64,7 +64,7 @@ export function exportAllFundsToCsv(funds: FundData[]): string {
       const da = normalizeDateString(a.date || a.asOfDate).replace(/\//g, '-');
       const db = normalizeDateString(b.date || b.asOfDate).replace(/\//g, '-');
       return new Date(db).getTime() - new Date(da).getTime();
-    });
+    }).slice(0, 30);
 
     sortedSnapshots.forEach((snap) => {
       const dateStr = normalizeDateString(snap.date || snap.asOfDate);
@@ -103,7 +103,10 @@ export function exportAllFundsToJson(funds: FundData[]): string {
     version: '2.1',
     exportedAt: new Date().toISOString(),
     fundsCount: funds.length,
-    funds: funds,
+    funds: funds.map((f) => ({
+      ...f,
+      snapshots: (f.snapshots || []).slice(0, 30),
+    })),
   };
   return JSON.stringify(backupObject, null, 2);
 }

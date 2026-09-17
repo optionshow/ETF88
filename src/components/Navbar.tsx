@@ -135,7 +135,7 @@ export const Navbar: React.FC<NavbarProps> = ({
             }`}
           >
             <PieChart className="w-3.5 h-3.5" />
-            <span>前五大追蹤</span>
+            <span>前五大個股追蹤</span>
           </button>
         </nav>
       </div>

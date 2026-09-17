@@ -59,17 +59,21 @@ export const HoldingChangesView: React.FC<HoldingChangesViewProps> = ({
   const [sortField, setSortField] = useState<'stockName' | 'price' | 'marketValue' | 'latestShares' | 'diffShares' | 'latestRatio' | 'diffRatio'>('diffShares');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
-  // Gather unique available dates across funds or for active fund
+  // Gather unique available dates across funds or for active fund (最多最新 30 天)
   const allDates = Array.from(
     new Set(funds.flatMap((f) => (f.snapshots || []).map((s) => s.date || s.asOfDate)))
-  ).filter((d): d is string => Boolean(d)).sort((a: string, b: string) => new Date(b.replace(/\//g, '-')).getTime() - new Date(a.replace(/\//g, '-')).getTime());
+  )
+    .filter((d): d is string => Boolean(d))
+    .sort((a: string, b: string) => new Date(b.replace(/\//g, '-')).getTime() - new Date(a.replace(/\//g, '-')).getTime())
+    .slice(0, 30);
 
   const currentFund = funds.find((f) => f.id === activeFundId);
   const currentFundSnapshots = currentFund?.snapshots || [];
 
-  const dateOptions = isAll
+  const dateOptions = (isAll
     ? allDates
-    : currentFundSnapshots.map((s) => s.date || s.asOfDate);
+    : currentFundSnapshots.map((s) => s.date || s.asOfDate)
+  ).slice(0, 30);
 
   const targetLatestDate = dateOptions[latestIndex] || dateOptions[0] || '2026/08/04';
   const targetPrevDate = dateOptions[prevIndex] || dateOptions[Math.min(1, dateOptions.length - 1)] || '2026/08/05';

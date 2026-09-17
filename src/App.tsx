@@ -225,29 +225,33 @@ export default function App() {
       </main>
 
       {/* Export Modal */}
-      <ExportModal
-        isOpen={isExportOpen}
-        onClose={() => setIsExportOpen(false)}
-        funds={funds}
-        selectedFundId={selectedFundId}
-        onSwitchToImport={() => {
-          setIsExportOpen(false);
-          setIsImportOpen(true);
-        }}
-      />
+      {isExportOpen && (
+        <ExportModal
+          isOpen={isExportOpen}
+          onClose={() => setIsExportOpen(false)}
+          funds={funds}
+          selectedFundId={selectedFundId}
+          onSwitchToImport={() => {
+            setIsExportOpen(false);
+            setIsImportOpen(true);
+          }}
+        />
+      )}
 
       {/* Import Modal */}
-      <ImportModal
-        isOpen={isImportOpen}
-        onClose={() => setIsImportOpen(false)}
-        funds={funds}
-        selectedFundId={selectedFundId}
-        onImportSuccess={handleImportSuccess}
-        onSwitchToExport={() => {
-          setIsImportOpen(false);
-          setIsExportOpen(true);
-        }}
-      />
+      {isImportOpen && (
+        <ImportModal
+          isOpen={isImportOpen}
+          onClose={() => setIsImportOpen(false)}
+          funds={funds}
+          selectedFundId={selectedFundId}
+          onImportSuccess={handleImportSuccess}
+          onSwitchToExport={() => {
+            setIsImportOpen(false);
+            setIsExportOpen(true);
+          }}
+        />
+      )}
 
       {/* Footer */}
       <footer className="border-t border-slate-200 bg-white py-4 text-center text-slate-500 text-xs mt-auto">

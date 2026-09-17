@@ -29,7 +29,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   const currentFund = validFunds.find((f) => String(f.id) === String(selectedFundId)) || validFunds[0];
 
   const generateCsvData = (): string => {
-    const headers = ['日期', '基金代碼', '基金名稱', '股票代號', '股票名稱', '目前股價', '持股市值(萬)', '投資股數', '比例(%)'];
+    // Columns A~H: 基金代碼, 基金名稱, 日期, 個股名稱, 目前股價, 持股市值(元), 投資股數, 比例(%)
+    const headers = ['基金代碼', '基金名稱', '日期', '個股名稱', '目前股價', '持股市值(元)', '投資股數', '比例(%)'];
     const rows: string[][] = [headers];
 
     const fundsToExport = exportScope === 'all_funds' ? validFunds : (currentFund ? [currentFund] : []);
@@ -41,25 +42,26 @@ export const ExportModal: React.FC<ExportModalProps> = ({
       const snapshotsToExport =
         exportScope === 'current_latest'
           ? (fund.snapshots || []).slice(0, 1)
-          : (fund.snapshots || []);
+          : (fund.snapshots || []).slice(0, 30);
 
       snapshotsToExport.forEach((snapshot) => {
         const dateStr = String(snapshot.date || snapshot.asOfDate || '').replace(/-/g, '/');
         (snapshot.holdings || []).forEach((h) => {
           const priceStr = h.price ? String(h.price) : '';
-          const mvWan = h.price && h.shares ? (Math.round((h.price * h.shares) / 10000) / 1).toString() : (h.marketValue ? (Math.round(h.marketValue / 10000)).toString() : '');
+          const mvVal = h.marketValue !== undefined
+            ? String(h.marketValue)
+            : (h.price && h.shares ? String(h.price * h.shares) : '');
           const sharesStr = String(h.shares || 0);
-          const ratioStr = String(h.ratio || 0);
+          const ratioStr = String(h.ratio || 0) + '%';
           const stockName = String(h.stockName || '');
 
           rows.push([
-            dateStr,
             cleanCode,
             `"${fundName.replace(/"/g, '""')}"`,
-            h.stockCode || '',
+            dateStr,
             `"${stockName.replace(/"/g, '""')}"`,
             priceStr,
-            mvWan,
+            mvVal,
             sharesStr,
             ratioStr,
           ]);
@@ -81,8 +83,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     const timestamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const filename =
       exportScope === 'all_funds'
-        ? `台灣主動基金持股總表_${timestamp}.csv`
-        : `${fundCode}_${currentFund.name}_持股明細_${timestamp}.csv`;
+        ? `台灣主動基金最新30天持股總表_${timestamp}.csv`
+        : `${fundCode}_${currentFund.name}_最新30天持股明細_${timestamp}.csv`;
 
     link.setAttribute('href', url);
     link.setAttribute('download', filename);
@@ -93,11 +95,16 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   };
 
   const handleDownloadJson = () => {
-    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(funds, null, 2));
+    // 確保 JSON 備份檔也限制在最新 30 天
+    const cleanFundsForExport = funds.map((f) => ({
+      ...f,
+      snapshots: (f.snapshots || []).slice(0, 30),
+    }));
+    const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(cleanFundsForExport, null, 2));
     const link = document.createElement('a');
     const timestamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     link.setAttribute('href', dataStr);
-    link.setAttribute('download', `台灣基金持股完整備份_${timestamp}.json`);
+    link.setAttribute('download', `台灣基金持股最新30天備份_${timestamp}.json`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -157,7 +164,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                     : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
                 }`}
               >
-                目前基金 (全部期別)
+                目前基金 (最新30天)
               </button>
               <button
                 type="button"
@@ -168,7 +175,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                     : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
                 }`}
               >
-                目前基金 (最新期別)
+                目前基金 (僅最新期)
               </button>
               <button
                 type="button"
@@ -179,7 +186,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
                     : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
                 }`}
               >
-                全部基金 ({funds.length} 檔)
+                全部基金 (最新30天)
               </button>
             </div>
           </div>
@@ -188,10 +195,10 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs text-slate-600 space-y-1">
             <div className="font-semibold text-slate-800 flex items-center justify-between">
               <span>目前基金：{currentFund?.name || '未指定'} ({currentFund?.code ? currentFund.code.replace('.TW', '') : ''})</span>
-              <span className="text-blue-600 font-mono">共 {currentFund?.snapshots?.length || 0} 個歷史期別</span>
+              <span className="text-blue-600 font-mono">共 {Math.min(currentFund?.snapshots?.length || 0, 30)} 個期別 (最多最新 30 天)</span>
             </div>
             <p className="text-slate-500">
-              匯出格式包含：日期、基金名稱、個股代號、名稱、股價、市值(萬)、投資股數、比例(%)。檔案自帶 UTF-8 BOM，在 Excel 或 Google 試算表直接開啟不亂碼。
+              匯出規範：系統固定依最新 30 天期別（包括今天）匯出。A～H 欄位規範：基金代碼、基金名稱、日期、個股名稱、目前股價、持股市值(元)、投資股數、比例(%)。檔案自帶 UTF-8 BOM，在 Excel 或 Google 試算表直接開啟不亂碼。
             </p>
           </div>
 

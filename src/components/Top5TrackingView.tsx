@@ -103,28 +103,113 @@ function getFundSnapshotForDate(fund: FundData, targetDate: string) {
 }
 
 export const Top5TrackingView: React.FC<Top5TrackingViewProps> = ({ funds }) => {
-  const overlapData = calculateStockOverlap(funds);
-  const top5Stocks = overlapData.slice(0, 5);
-
+  const [selectedScope, setSelectedScope] = useState<string>('all');
   const [highlightCode, setHighlightCode] = useState<string | null>(null);
+
+  const validFunds = useMemo(() => {
+    return Array.isArray(funds)
+      ? funds.filter((f) => Boolean(f && typeof f === 'object' && (f.id || f.code || f.name)))
+      : [];
+  }, [funds]);
+
+  // Determine Top 5 individual stocks according to selected scope (All funds combined vs Single fund)
+  const top5Stocks = useMemo(() => {
+    if (selectedScope === 'all') {
+      const overlapData = calculateStockOverlap(validFunds);
+      return overlapData.slice(0, 5);
+    }
+
+    const targetFund = validFunds.find((f) => String(f.id) === String(selectedScope) || String(f.code) === String(selectedScope));
+    if (!targetFund) {
+      const overlapData = calculateStockOverlap(validFunds);
+      return overlapData.slice(0, 5);
+    }
+
+    const sortedSnaps = [...(targetFund.snapshots || [])].sort((a, b) => {
+      const da = new Date((a.date || a.asOfDate || '').replace(/\//g, '-')).getTime() || 0;
+      const db = new Date((b.date || b.asOfDate || '').replace(/\//g, '-')).getTime() || 0;
+      return db - da;
+    });
+
+    const latestSnap = sortedSnaps[0];
+    if (!latestSnap || !Array.isArray(latestSnap.holdings)) return [];
+
+    // Filter to ensure only individual stocks (排除 ETF 代號如 00 開頭、債券、期貨等非上市櫃個股資產)
+    const stockHoldings = latestSnap.holdings.filter((h) => {
+      const code = (h.stockCode || '').replace(/[^0-9A-Za-z]/g, '').trim();
+      const rawName = (h.stockName || '').replace(/\*/g, '').trim();
+      if (code.startsWith('00') || /ETF|債|期貨|權證|受益憑證|受益證券|現金|存款/i.test(rawName)) {
+        return false;
+      }
+      return true;
+    });
+
+    // Sort by ratio descending
+    stockHoldings.sort((a, b) => (b.ratio || 0) - (a.ratio || 0));
+
+    return stockHoldings.slice(0, 5).map((h) => {
+      const code = (h.stockCode || '').replace(/[^0-9A-Za-z]/g, '').trim();
+      const rawName = (h.stockName || '').replace(/\*/g, '').trim();
+      const pureChineseName = rawName
+        .replace(/\(\s*\d+\s*\)/g, '')
+        .replace(/\d{4,6}/g, '')
+        .trim();
+      const standardDisplayName = code ? `${pureChineseName} (${code})` : pureChineseName;
+
+      return {
+        stockName: standardDisplayName,
+        stockCode: code,
+        price: h.price,
+        funds: [
+          {
+            fundId: targetFund.id,
+            fundCode: targetFund.code,
+            fundName: targetFund.name,
+            shares: h.shares || 0,
+            ratio: h.ratio || 0,
+            price: h.price,
+          },
+        ],
+        totalRatio: h.ratio || 0,
+        totalShares: h.shares || 0,
+        fundCount: 1,
+      };
+    });
+  }, [validFunds, selectedScope]);
+
+  const currentScopeName = useMemo(() => {
+    if (selectedScope === 'all') return '全基金跨檔合計';
+    const fund = validFunds.find((f) => String(f.id) === String(selectedScope) || String(f.code) === String(selectedScope));
+    return fund ? `${fund.name} (${String(fund.code || '').replace('.TW', '')})` : '選取基金';
+  }, [selectedScope, validFunds]);
 
   // Extract ONLY real historical snapshot dates from funds / Google Sheets data
   const realDates = useMemo(() => {
     const datesSet = new Set<string>();
-    funds.forEach((fund) => {
+    const fundsToScan = selectedScope === 'all'
+      ? validFunds
+      : validFunds.filter((f) => String(f.id) === String(selectedScope) || String(f.code) === String(selectedScope));
+
+    fundsToScan.forEach((fund) => {
       (fund.snapshots || []).forEach((snap) => {
         const dKey = normalizeDateString(snap.date || snap.asOfDate);
         if (dKey) datesSet.add(dKey);
       });
     });
 
-    return Array.from(datesSet).sort(
+    const sortedDates = Array.from(datesSet).sort(
       (a, b) => new Date(a.replace(/\//g, '-')).getTime() - new Date(b.replace(/\//g, '-')).getTime()
     );
-  }, [funds]);
+    // 系統最多容納最新 30 天
+    return sortedDates.slice(-30);
+  }, [validFunds, selectedScope]);
 
   // Build trend data points for each real date across the top 5 stocks
   const chartData = useMemo(() => {
+    const fundsToScan = selectedScope === 'all'
+      ? validFunds
+      : validFunds.filter((f) => String(f.id) === String(selectedScope) || String(f.code) === String(selectedScope));
+
     return realDates.map((dKey) => {
       const dataPoint: Record<string, any> = {
         fullDate: dKey,
@@ -143,7 +228,7 @@ export const Top5TrackingView: React.FC<Top5TrackingViewProps> = ({ funds }) => 
         let totalRatio = 0;
         let totalMv = 0;
 
-        funds.forEach((fund) => {
+        fundsToScan.forEach((fund) => {
           // Use the snapshot on or most recently before dKey to avoid missing funds on staggered date updates
           const snap = getFundSnapshotForDate(fund, dKey);
           if (!snap) return;
@@ -181,7 +266,7 @@ export const Top5TrackingView: React.FC<Top5TrackingViewProps> = ({ funds }) => 
 
       return dataPoint;
     });
-  }, [realDates, top5Stocks, funds]);
+  }, [realDates, top5Stocks, validFunds, selectedScope]);
 
   // Compute trend differences for top 5 stocks between latest date and previous date
   const stockTrends = useMemo(() => {
@@ -219,20 +304,67 @@ export const Top5TrackingView: React.FC<Top5TrackingViewProps> = ({ funds }) => 
       <div className="bg-white border border-slate-200 rounded-lg p-5 shadow-sm">
         <div className="flex items-start justify-between flex-wrap gap-4">
           <div className="flex items-start space-x-3.5">
-            <div className="w-10 h-10 rounded-lg bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-600 flex-shrink-0 mt-0.5">
+            <div className="w-10 h-10 rounded-lg bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-600 shrink-0 mt-0.5">
               <PieChart className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-slate-900 mb-1 flex items-center gap-2">
-                <span>跨基金重疊個股 — 前五大追蹤</span>
+              <div className="flex items-center gap-2 flex-wrap mb-1">
+                <h3 className="text-base font-bold text-slate-900">
+                  {selectedScope === 'all'
+                    ? '持股前五大個股追蹤'
+                    : `【${currentScopeName}】前五大持股個股追蹤`}
+                </h3>
+                <span className="bg-emerald-100 text-emerald-800 text-[11px] px-2.5 py-0.5 rounded-full font-bold">
+                  ✓ 標的為成分個股 (非 ETF)
+                </span>
                 <span className="bg-blue-100 text-blue-800 text-[11px] px-2 py-0.5 rounded font-mono font-bold hidden sm:inline">
                   整合雙縱軸走勢圖
                 </span>
-              </h3>
-              <p className="text-xs text-slate-600 leading-relaxed hidden sm:block">
-                自動整合跨基金持股集中度最高的前 5 大權值個股於同一張走勢圖。
+              </div>
+              <p className="text-xs text-slate-600 leading-relaxed">
+                {selectedScope === 'all'
+                  ? '追蹤全基金/ETF持股中合計佔比最高的前 5 大台股成分「個股」（如台積電、聯發科等上市櫃公司），非追蹤 ETF 本身。'
+                  : `追蹤【${currentScopeName}】投資組合中持股權重最高的前 5 大台股成分個股之歷史比例與市值變化。`}
               </p>
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Scope Selector: All Funds vs Individual Fund */}
+      <div className="bg-white border border-slate-200 rounded-lg p-3 shadow-xs">
+        <div className="flex items-center justify-between flex-wrap gap-2.5">
+          <div className="flex items-center space-x-1.5 text-xs font-bold text-slate-700">
+            <span>追蹤範圍（個股）：</span>
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              onClick={() => setSelectedScope('all')}
+              className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all cursor-pointer ${
+                selectedScope === 'all'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+              }`}
+            >
+              ⭐ 全基金跨檔合計前五大個股
+            </button>
+            {validFunds.map((fund) => {
+              const cleanCode = String(fund.code || '').replace('.TW', '');
+              const isSelected = selectedScope === fund.id || selectedScope === fund.code;
+              return (
+                <button
+                  key={fund.id}
+                  onClick={() => setSelectedScope(fund.id)}
+                  className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all cursor-pointer ${
+                    isSelected
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
+                >
+                  {fund.name} ({cleanCode})
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -268,11 +400,15 @@ export const Top5TrackingView: React.FC<Top5TrackingViewProps> = ({ funds }) => 
                   TOP {idx + 1}
                 </span>
                 <span className="text-[11px] font-mono text-slate-500">
-                  {stock.fundCount} 檔重疊
+                  {selectedScope === 'all'
+                    ? `${stock.fundCount} 檔重疊`
+                    : stock.totalShares > 0
+                    ? `${stock.totalShares.toLocaleString()} 股`
+                    : '上市櫃個股'}
                 </span>
               </div>
 
-              <div className="font-bold text-sm text-slate-900 truncate">
+              <div className="font-bold text-sm text-slate-900 truncate" title={stock.stockName}>
                 {stock.stockName}
               </div>
 
@@ -308,18 +444,20 @@ export const Top5TrackingView: React.FC<Top5TrackingViewProps> = ({ funds }) => 
           <div className="flex items-center space-x-2">
             <Activity className="w-5 h-5 text-blue-600" />
             <h4 className="text-sm font-bold text-slate-900">
-              前五大個股走勢圖
+              {selectedScope === 'all'
+                ? '跨基金合計持股前五大個股走勢圖'
+                : `【${currentScopeName}】前五大持股個股走勢圖`}
             </h4>
           </div>
 
           <div className="flex items-center space-x-4 text-xs font-semibold">
             <div className="flex items-center space-x-1.5">
               <span className="w-3 h-0.5 bg-blue-600 inline-block"></span>
-              <span className="text-slate-700">左縱軸: 持股比例 (%) [線圖]</span>
+              <span className="text-slate-700">左縱軸: 持股比例 (%) [折線]</span>
             </div>
             <div className="flex items-center space-x-1.5">
               <span className="w-3 h-3 rounded bg-emerald-500/50 inline-block"></span>
-              <span className="text-slate-700">右縱軸: 持股市值 (萬) [漸層底色]</span>
+              <span className="text-slate-700">右縱軸: 持股市值 (萬) [面積]</span>
             </div>
           </div>
         </div>
@@ -425,7 +563,7 @@ export const Top5TrackingView: React.FC<Top5TrackingViewProps> = ({ funds }) => 
                           <div className="font-bold border-b border-slate-700 pb-1.5 text-slate-200 flex items-center justify-between">
                             <span>日期: {data.fullDate}</span>
                             <span className="text-[11px] text-blue-400 font-mono">
-                              前五大明細
+                              前五大個股明細
                             </span>
                           </div>
 
@@ -543,7 +681,7 @@ export const Top5TrackingView: React.FC<Top5TrackingViewProps> = ({ funds }) => 
         </div>
 
         <div className="text-right text-[11px] text-slate-400 italic">
-          * 數據由 Google 試算表及歷史期別快照調閱計算，僅列出真實有記載之歷史交易日紀錄。
+          * 數據由 Google 試算表及歷史期別快照調閱計算，標的為基金持股中之成分上市櫃個股，僅列出真實有記載之歷史交易日紀錄。
         </div>
       </div>
     </div>
