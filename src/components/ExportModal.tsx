@@ -17,7 +17,6 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   selectedFundId,
   onSwitchToImport,
 }) => {
-  const [exportScope, setExportScope] = useState<'current_all' | 'current_latest' | 'all_funds'>('current_all');
   const [copied, setCopied] = useState(false);
 
   if (!isOpen) return null;
@@ -33,16 +32,12 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     const headers = ['基金代碼', '基金名稱', '日期', '個股名稱', '目前股價', '持股市值(元)', '投資股數', '比例(%)'];
     const rows: string[][] = [headers];
 
-    const fundsToExport = exportScope === 'all_funds' ? validFunds : (currentFund ? [currentFund] : []);
-
-    fundsToExport.forEach((fund) => {
+    // 匯出範圍：固定為全部基金（最新 30 天）
+    validFunds.forEach((fund) => {
       if (!fund) return;
       const cleanCode = String(fund.code || '').replace('.TW', '');
       const fundName = String(fund.name || '');
-      const snapshotsToExport =
-        exportScope === 'current_latest'
-          ? (fund.snapshots || []).slice(0, 1)
-          : (fund.snapshots || []).slice(0, 30);
+      const snapshotsToExport = (fund.snapshots || []).slice(0, 30);
 
       snapshotsToExport.forEach((snapshot) => {
         const dateStr = String(snapshot.date || snapshot.asOfDate || '').replace(/-/g, '/');
@@ -79,12 +74,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
 
-    const fundCode = currentFund ? currentFund.code.replace('.TW', '') : 'ALL';
     const timestamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const filename =
-      exportScope === 'all_funds'
-        ? `台灣主動基金最新30天持股總表_${timestamp}.csv`
-        : `${fundCode}_${currentFund.name}_最新30天持股明細_${timestamp}.csv`;
+    const filename = `台灣主動基金最新30天持股總表_${timestamp}.csv`;
 
     link.setAttribute('href', url);
     link.setAttribute('download', filename);
@@ -96,7 +87,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
   const handleDownloadJson = () => {
     // 確保 JSON 備份檔也限制在最新 30 天
-    const cleanFundsForExport = funds.map((f) => ({
+    const cleanFundsForExport = validFunds.map((f) => ({
       ...f,
       snapshots: (f.snapshots || []).slice(0, 30),
     }));
@@ -151,54 +142,32 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
         {/* Content */}
         <div className="p-5 space-y-4">
-          {/* Scope selection */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-700">選擇匯出範圍：</label>
-            <div className="grid grid-cols-3 gap-2">
-              <button
-                type="button"
-                onClick={() => setExportScope('current_all')}
-                className={`py-2 px-3 text-xs font-semibold rounded-lg border text-center transition-all ${
-                  exportScope === 'current_all'
-                    ? 'border-blue-600 bg-blue-50 text-blue-800 ring-1 ring-blue-600'
-                    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-                }`}
-              >
-                目前基金 (最新30天)
-              </button>
-              <button
-                type="button"
-                onClick={() => setExportScope('current_latest')}
-                className={`py-2 px-3 text-xs font-semibold rounded-lg border text-center transition-all ${
-                  exportScope === 'current_latest'
-                    ? 'border-blue-600 bg-blue-50 text-blue-800 ring-1 ring-blue-600'
-                    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-                }`}
-              >
-                目前基金 (僅最新期)
-              </button>
-              <button
-                type="button"
-                onClick={() => setExportScope('all_funds')}
-                className={`py-2 px-3 text-xs font-semibold rounded-lg border text-center transition-all ${
-                  exportScope === 'all_funds'
-                    ? 'border-blue-600 bg-blue-50 text-blue-800 ring-1 ring-blue-600'
-                    : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50'
-                }`}
-              >
-                全部基金 (最新30天)
-              </button>
+          {/* Fixed Scope Display */}
+          <div className="bg-blue-50/80 border border-blue-200 rounded-lg p-3.5 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <span className="inline-flex items-center justify-center w-2 h-2 rounded-full bg-blue-600 ring-4 ring-blue-100"></span>
+                <span className="text-xs font-bold text-blue-950">匯出範圍：全部基金（最新 30 天）</span>
+              </div>
+              <span className="text-blue-700 font-mono font-semibold bg-blue-100/80 px-2 py-0.5 rounded text-[11px]">
+                共 {validFunds.length} 檔基金
+              </span>
             </div>
+            <p className="text-[11px] text-blue-900/80 leading-relaxed">
+              系統將自動整合並匯出所有追蹤基金之<strong>最新 30 天</strong>（包括今天）持股期別，嚴格依照 <strong>A～H 欄位順序</strong>輸出。
+            </p>
           </div>
 
-          {/* Current Selection summary */}
-          <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs text-slate-600 space-y-1">
-            <div className="font-semibold text-slate-800 flex items-center justify-between">
-              <span>目前基金：{currentFund?.name || '未指定'} ({currentFund?.code ? currentFund.code.replace('.TW', '') : ''})</span>
-              <span className="text-blue-600 font-mono">共 {Math.min(currentFund?.snapshots?.length || 0, 30)} 個期別 (最多最新 30 天)</span>
+          {/* Export Content Details */}
+          <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs text-slate-600 space-y-1.5">
+            <div className="font-semibold text-slate-800 flex items-center justify-between text-xs">
+              <span>涵蓋基金清單</span>
+              <span className="text-slate-500 font-mono text-[11px]">
+                {validFunds.map((f) => f.code.replace('.TW', '')).join('、')}
+              </span>
             </div>
-            <p className="text-slate-500">
-              匯出規範：系統固定依最新 30 天期別（包括今天）匯出。A～H 欄位規範：基金代碼、基金名稱、日期、個股名稱、目前股價、持股市值(元)、投資股數、比例(%)。檔案自帶 UTF-8 BOM，在 Excel 或 Google 試算表直接開啟不亂碼。
+            <p className="text-slate-500 text-[11px] leading-relaxed">
+              匯出欄位（A～H）：基金代碼、基金名稱、日期、個股名稱、目前股價、持股市值(元)、投資股數、比例(%)。檔案自帶 UTF-8 BOM，在 Excel 與 Google 試算表直接點擊即可正確開啓不亂碼。
             </p>
           </div>
 

@@ -664,29 +664,16 @@ export const ImportModal: React.FC<ImportModalProps> = ({
             </div>
           </div>
 
-          {/* Default Target Fund Selector (used when row doesn't specify fund) */}
-          {!isJsonBackup && targetList.length <= 1 && (
-            <div className="space-y-1">
-              <label className="font-bold text-slate-700">預設匯入目標基金 (若貼上內容未包含基金代碼/名稱時使用)：</label>
-              <select
-                value={targetFundId}
-                onChange={(e) => setTargetFundId(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                {validFunds.map((f, idx) => {
-                  const fId = String(f.id || idx);
-                  const fCode = String(f.code || '').replace('.TW', '');
-                  const fName = String(f.name || '未命名基金');
-                  const snapCount = Array.isArray(f.snapshots) ? f.snapshots.length : 0;
-                  return (
-                    <option key={fId} value={fId}>
-                      {fName} {fCode ? `(${fCode})` : ''} - 目前有 {snapCount} 期
-                    </option>
-                  );
-                })}
-              </select>
+          {/* Default Scope Indicator: 全部基金 */}
+          <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs flex items-center justify-between">
+            <div className="flex items-center space-x-2">
+              <span className="inline-flex items-center justify-center w-2 h-2 rounded-full bg-blue-600 ring-4 ring-blue-100"></span>
+              <span className="font-bold text-slate-800">匯入預設範圍：全部基金 ({validFunds.length} 檔)</span>
             </div>
-          )}
+            <span className="text-slate-500 font-mono text-[11px]">
+              依 A 欄 (代碼) 或 B 欄 (名稱) 自動各別匯入各基金
+            </span>
+          </div>
 
           {/* File upload button */}
           <div className="space-y-1">
@@ -718,19 +705,25 @@ export const ImportModal: React.FC<ImportModalProps> = ({
                 <button
                   type="button"
                   onClick={handleLoadAtoHSample}
-                  className="text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-2 py-0.5 rounded text-[11px] font-semibold cursor-pointer transition-colors"
-                  title="帶入包含多檔基金的 A~H 範本"
+                  className="text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-2.5 py-1 rounded text-[11px] font-bold cursor-pointer transition-colors"
+                  title="帶入包含全部基金的 A~H 格式範本"
                 >
-                  帶入 A～H 範本 (跨基金)
+                  帶入 A～H 範本 (全部基金)
                 </button>
-                <button
-                  type="button"
-                  onClick={handleLoadCurrentFundSample}
-                  className="text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 border border-slate-200 px-2 py-0.5 rounded text-[11px] font-semibold cursor-pointer transition-colors"
-                  title="帶入目前選定基金範本"
-                >
-                  帶入單檔範本
-                </button>
+                {inputText && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setInputText('');
+                      setIsJsonBackup(false);
+                      setParsedJsonFunds(null);
+                      setUploadedFileName('');
+                    }}
+                    className="text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 border border-slate-200 px-2 py-1 rounded text-[11px] font-semibold cursor-pointer transition-colors"
+                  >
+                    清空
+                  </button>
+                )}
               </div>
             </div>
             <textarea
