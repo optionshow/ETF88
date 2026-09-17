@@ -5,9 +5,6 @@ import {
   PieChart,
   Info,
   Home,
-  Upload,
-  Download,
-  Clock,
   FileDown,
   FileUp,
 } from 'lucide-react';
@@ -16,11 +13,8 @@ interface NavbarProps {
   activeTab: 'details' | 'changes' | 'overlap' | 'top5';
   setActiveTab: (tab: 'details' | 'changes' | 'overlap' | 'top5') => void;
   onRefreshAll: () => void;
-  onUploadToSheets: () => void;
-  onDownloadFromSheets: () => void;
   onOpenExport: () => void;
   onOpenImport: () => void;
-  sheetsLastUpdated: string;
   isRefreshing: boolean;
   hasTodayData?: boolean;
 }
@@ -29,11 +23,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   activeTab,
   setActiveTab,
   onRefreshAll,
-  onUploadToSheets,
-  onDownloadFromSheets,
   onOpenExport,
   onOpenImport,
-  sheetsLastUpdated,
   isRefreshing,
   hasTodayData = false,
 }) => {
@@ -55,65 +46,32 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </span>
               </div>
               <p className="text-xs text-slate-500">
-                開啟時自動比對最新狀態・同步試算表歷史期別並更新今日持股
+                開啟時自動比對最新狀態・精準自動更新每日持股
               </p>
             </div>
           </div>
 
           {/* Action Buttons */}
           <div className="flex items-center space-x-1.5 sm:space-x-2 flex-nowrap">
-            {/* 匯出 (方便在試算表匯入更新或備份) */}
+            {/* 匯出資料 */}
             <button
               onClick={onOpenExport}
-              className="inline-flex items-center space-x-1 px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-md bg-indigo-600 hover:bg-indigo-700 text-white shadow-2xs transition-colors cursor-pointer"
-              title="匯出持股資料 (CSV/JSON，方便在試算表匯入更新或備份)"
+              className="inline-flex items-center space-x-1 px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-md bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs transition-colors cursor-pointer"
+              title="匯出持股資料 (CSV 試算表 / JSON 備份)"
             >
               <FileDown className="w-3.5 h-3.5" />
-              <span className="inline">匯出</span>
+              <span>匯出</span>
             </button>
 
-            {/* 匯入 (匯入試算表表格或備份檔更新網頁) */}
+            {/* 匯入資料 */}
             <button
               onClick={onOpenImport}
-              className="inline-flex items-center space-x-1 px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-md bg-teal-600 hover:bg-teal-700 text-white shadow-2xs transition-colors cursor-pointer"
-              title="匯入試算表表格或備份檔 (更新網頁資料)"
+              className="inline-flex items-center space-x-1 px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-md bg-teal-600 hover:bg-teal-700 text-white shadow-xs transition-colors cursor-pointer"
+              title="匯入持股資料 (非正確日期將自動省略)"
             >
               <FileUp className="w-3.5 h-3.5" />
-              <span className="inline">匯入</span>
+              <span>匯入</span>
             </button>
-
-            {/* 上傳資料 */}
-            <button
-              onClick={onUploadToSheets}
-              disabled={isRefreshing}
-              className="inline-flex items-center space-x-1 px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-md bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs transition-colors disabled:opacity-50 cursor-pointer"
-              title="目前網頁資料上傳到試算表"
-            >
-              <Upload className="w-3.5 h-3.5" />
-              <span className="hidden md:inline">上傳試算表</span>
-            </button>
-
-            {/* 下載資料 */}
-            <button
-              onClick={onDownloadFromSheets}
-              disabled={isRefreshing}
-              className="inline-flex items-center space-x-1 px-2.5 sm:px-3 py-1.5 text-xs font-bold rounded-md bg-blue-600 hover:bg-blue-700 text-white shadow-2xs transition-colors disabled:opacity-50 cursor-pointer"
-              title="試算表資料下載到網頁"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span className="hidden md:inline">下載試算表</span>
-            </button>
-
-            {/* 資料庫時間 */}
-            <div
-              className="inline-flex items-center space-x-1 px-2 sm:px-2.5 py-1.5 text-xs font-semibold rounded-md bg-slate-100 text-slate-700 border border-slate-200 shadow-2xs"
-              title="資料庫時間"
-            >
-              <Clock className="w-3.5 h-3.5 text-slate-500" />
-              <span>
-                <span className="hidden xl:inline">資料庫時間：</span><strong className="font-mono text-slate-900">{sheetsLastUpdated}</strong>
-              </span>
-            </div>
 
             {/* 每日更新 (若持股明細日期的日期是今天日期，隱藏每日更新按鈕) */}
             {!hasTodayData && (

@@ -1,8 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { FundData, HoldingItem } from '../types';
-import { ExternalLink, ArrowUpDown, Calendar, Database, Sparkles, RefreshCcw, Edit3, CheckCircle2 } from 'lucide-react';
+import { ExternalLink, ArrowUpDown, Calendar, Database, Sparkles, RefreshCcw } from 'lucide-react';
 import { PieChart as RePieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
-import { getBusinessDayOptions, parseManualHoldingText } from '../services/fundService';
 
 interface FundDetailViewProps {
   funds: FundData[];
@@ -11,42 +10,7 @@ interface FundDetailViewProps {
   onRefreshSingle?: (fundCode: string) => void;
   onFetchStockPrices?: () => void;
   isRefreshing: boolean;
-  onUpdateFunds?: (funds: FundData[], message?: string, singleFundToPush?: FundData) => void;
 }
-
-const SAMPLE_TEXT = `股票代號\t股票名稱\t股數\t持股權重
-2330\t台積電\t11,959,000\t9.3%
-2383\t台光電\t4,863,000\t8.38%
-2454\t聯發科\t5,448,000\t7.06%
-3037\t欣興\t20,210,000\t6.26%
-6669\t緯穎\t2,708,000\t5.63%
-3017\t奇鋐\t5,801,000\t5.06%
-2345\t智邦\t6,419,000\t4.99%
-6223\t旺矽\t2,443,000\t4.83%
-2327\t國巨*\t25,437,000\t4.83%
-3665\t貿聯-KY\t5,130,848\t3.96%
-2303\t聯電\t87,718,000\t3.48%
-8046\t南電\t9,519,000\t3.33%
-3653\t健策\t2,375,000\t3.3%
-2308\t台達電\t5,932,000\t3.22%
-3711\t日月光投控\t16,327,000\t3.2%
-6274\t台燿\t5,499,000\t2.47%
-5274\t信驊\t454,900\t2.36%
-2368\t金像電\t7,579,000\t2.28%
-6805\t富世達\t1,957,000\t1.04%
-2449\t京元電子\t11,295,450\t0.93%
-8210\t勤誠\t2,297,000\t0.89%
-6187\t萬潤\t1,334,000\t0.49%
-2360\t致茂\t472,000\t0.3%
-4979\t華星光\t1,874,000\t0.28%
-1590\t亞德客-KY\t528,000\t0.25%
-4958\t臻鼎-KY\t1,682,000\t0.25%
-6510\t精測\t261,000\t0.24%
-6515\t穎崴\t93,000\t0.2%
-6278\t台表科\t3,250,000\t0.17%
-8996\t高力\t412,000\t0.14%
-2408\t南亞科\t940,000\t0.14%
-6271\t同欣電\t2,224,000\t0.13%`;
 
 const COLORS = [
   '#10B981', '#06B6D4', '#3B82F6', '#6366F1', '#8B5CF6',
@@ -60,7 +24,6 @@ export const FundDetailView: React.FC<FundDetailViewProps> = ({
   onRefreshSingle,
   onFetchStockPrices,
   isRefreshing,
-  onUpdateFunds,
 }) => {
   const [sortField, setSortField] = useState<'ratio' | 'shares' | 'stockName' | 'price' | 'marketValue'>('ratio');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
@@ -72,22 +35,12 @@ export const FundDetailView: React.FC<FundDetailViewProps> = ({
   const activeSnapshot = currentFund?.snapshots[selectedSnapshotIndex] || currentFund?.snapshots[0];
   const activeDate = activeSnapshot?.date || currentFund?.asOfDate || '2026/08/04';
 
-  const [selectedTargetDate, setSelectedTargetDate] = useState(activeDate);
-  const [manualText, setManualText] = useState('');
-
   const handleFetchStockPricesClick = async () => {
     if (onFetchStockPrices) {
       await onFetchStockPrices();
       setHasFetchedPrices(true);
     }
   };
-
-  // Update target date when selected snapshot changes
-  useEffect(() => {
-    if (activeDate) {
-      setSelectedTargetDate(activeDate);
-    }
-  }, [activeDate, selectedFundId, selectedSnapshotIndex]);
 
   if (!currentFund) {
     return (
@@ -102,95 +55,6 @@ export const FundDetailView: React.FC<FundDetailViewProps> = ({
     hasFetchedPrices ||
     (rawHoldings.length > 0 &&
       rawHoldings.every((h) => typeof h.price === 'number' && h.price > 0));
-  const todayObj = new Date();
-  const todayStr = `${todayObj.getFullYear()}/${String(todayObj.getMonth() + 1).padStart(2, '0')}/${String(todayObj.getDate()).padStart(2, '0')}`;
-  const businessDayOptions = getBusinessDayOptions(activeDate).filter((d) => d <= todayStr);
-
-  // Parse preview
-  const parsedPreview = parseManualHoldingText(manualText, selectedTargetDate);
-
-  const handleApplyManualInput = () => {
-    if (!manualText.trim()) {
-      alert('請先輸入或貼上持股明細文字！');
-      return;
-    }
-
-    const parsed = parseManualHoldingText(manualText, selectedTargetDate);
-
-    if (parsed.length === 0) {
-      alert('未能解析出有效的持股個股資料，請確認格式包含: 股票代號 股票名稱 股數 持股權重');
-      return;
-    }
-
-    // Attach prices from existing snapshots if available
-    const priceMap = new Map<string, number>();
-    currentFund.snapshots.forEach((s) => {
-      s.holdings.forEach((h) => {
-        if (h.price && h.price > 0) {
-          priceMap.set(h.stockCode, h.price);
-        }
-      });
-    });
-
-    const top20 = parsed.map((item) => {
-      const knownPrice = priceMap.get(item.stockCode);
-      if (knownPrice) {
-        return {
-          ...item,
-          price: knownPrice,
-          marketValue: knownPrice * item.shares,
-        };
-      }
-      return item;
-    });
-
-    // Overwrite snapshot for selectedTargetDate
-    const updatedSnapshots = [...currentFund.snapshots];
-    const existingIdx = updatedSnapshots.findIndex(
-      (s) => s.date === selectedTargetDate || s.asOfDate === selectedTargetDate
-    );
-
-    if (existingIdx >= 0) {
-      updatedSnapshots[existingIdx] = {
-        ...updatedSnapshots[existingIdx],
-        date: selectedTargetDate,
-        asOfDate: selectedTargetDate,
-        holdings: top20,
-        isManual: true,
-      };
-    } else {
-      updatedSnapshots.push({
-        date: selectedTargetDate,
-        asOfDate: selectedTargetDate,
-        holdings: top20,
-        isManual: true,
-      });
-    }
-
-    // Sort snapshots descending
-    updatedSnapshots.sort(
-      (a, b) => new Date(b.date.replace(/\//g, '-')).getTime() - new Date(a.date.replace(/\//g, '-')).getTime()
-    );
-
-    const updatedFund: FundData = {
-      ...currentFund,
-      asOfDate: updatedSnapshots[0]?.asOfDate || currentFund.asOfDate,
-      snapshots: updatedSnapshots,
-      lastUpdated: new Date().toLocaleString('zh-TW'),
-    };
-
-    const updatedFunds = funds.map((f) => (f.id === currentFund.id ? updatedFund : f));
-
-    if (onUpdateFunds) {
-      onUpdateFunds(
-        updatedFunds,
-        `✅ 已成功手動覆蓋【${currentFund.name} (${currentFund.code.replace('.TW', '')})】(${selectedTargetDate}) 前 20 大持股，其他基金不受影響，並已自動同步至 Google 試算表！`,
-        updatedFund
-      );
-    }
-  };
-
-
   // Sort
   const filteredHoldings = [...rawHoldings]
     .sort((a, b) => {
@@ -493,7 +357,7 @@ export const FundDetailView: React.FC<FundDetailViewProps> = ({
                       ))}
                     </Pie>
                     <Tooltip
-                      contentStyle={{ backgroundColor: '#FFFFFF', borderColor: '#CBD5E1', borderRadius: '6px', shadow: '0 2px 4px rgba(0,0,0,0.05)' }}
+                      contentStyle={{ backgroundColor: '#FFFFFF', borderColor: '#CBD5E1', borderRadius: '6px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}
                       itemStyle={{ color: '#2563EB', fontSize: '12px', fontWeight: 'bold' }}
                       formatter={(val: number) => [`${val}%`, '持股比例']}
                     />
@@ -516,94 +380,6 @@ export const FundDetailView: React.FC<FundDetailViewProps> = ({
                 ))}
               </div>
             </div>
-          </div>
-
-          {/* Manual Data Input Panel (Under Top 10 Ratios) - Hidden on mobile & tablet */}
-          <div className="hidden lg:block bg-white p-5 rounded-lg border border-slate-200 border-t-4 border-t-indigo-600 shadow-sm space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <Edit3 className="w-4 h-4 text-indigo-600" />
-                <h3 className="text-sm font-bold text-slate-900">手動輸入與覆蓋持股資料</h3>
-              </div>
-              <span className="text-[10px] px-2 py-0.5 rounded font-bold bg-amber-100 text-amber-800 border border-amber-300">
-                手動為最準確
-              </span>
-            </div>
-
-            <p className="text-xs text-slate-500">
-              輸入或貼上個股表格資料，系統將自動判別前 20 大個股（<span className="text-rose-600 font-bold">自動剔除 1% 以下個股，不予紀錄</span>），<span className="font-bold text-indigo-700">僅覆蓋目前所點選的【{currentFund.name} ({currentFund.code.replace('.TW', '')})】</span>，不影響其他基金與歷史期別。
-            </p>
-
-            {/* Target Date Selector (+/- 3 business days) */}
-            <div className="space-y-1">
-              <label className="block text-xs font-semibold text-slate-700">
-                選擇覆蓋期別日期 (基準日前後 3 個工作天):
-              </label>
-              <select
-                value={selectedTargetDate}
-                onChange={(e) => setSelectedTargetDate(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-300 rounded-md px-2.5 py-1.5 text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              >
-                {businessDayOptions.map((dateOpt) => {
-                  const isCurrentActive = dateOpt === activeDate;
-                  return (
-                    <option key={dateOpt} value={dateOpt}>
-                      {dateOpt} {isCurrentActive ? '(目前選取期別)' : ''}
-                    </option>
-                  );
-                })}
-              </select>
-            </div>
-
-            {/* Textarea Input */}
-            <div className="space-y-1.5">
-              <div className="flex items-center justify-between">
-                <label className="block text-xs font-semibold text-slate-700">
-                  貼上表格資料 (代號 / 名稱 / 股數 / 權重):
-                </label>
-                <button
-                  type="button"
-                  onClick={() => setManualText(SAMPLE_TEXT)}
-                  className="text-[11px] text-indigo-600 hover:text-indigo-800 font-semibold underline cursor-pointer"
-                >
-                  帶入測試範例
-                </button>
-              </div>
-
-              <textarea
-                rows={8}
-                value={manualText}
-                onChange={(e) => setManualText(e.target.value)}
-                placeholder={`股票代號\t股票名稱\t股數\t持股權重\n2330\t台積電\t11,959,000\t9.3%\n2383\t台光電\t4,863,000\t8.38%`}
-                className="w-full p-2.5 bg-slate-900 text-slate-100 font-mono text-xs rounded-md border border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-y"
-              />
-            </div>
-
-            {/* Real-time parse status indicator */}
-            {manualText.trim() && (
-              <div className="p-2.5 bg-indigo-50 border border-indigo-200 rounded-md text-xs text-indigo-900 space-y-1">
-                <div className="flex items-center justify-between font-bold">
-                  <span>已自動判別結果:</span>
-                  <span className="text-indigo-700 font-mono">
-                    {parsedPreview.length} / 20 檔 (前 20 大個股)
-                  </span>
-                </div>
-                {parsedPreview.length > 0 && (
-                  <div className="text-[11px] text-indigo-800 truncate font-mono">
-                    前 3 大: {parsedPreview.slice(0, 3).map((p) => `${p.stockName} ${p.ratio}%`).join(', ')}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Submit button */}
-            <button
-              onClick={handleApplyManualInput}
-              className="w-full py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-bold text-xs rounded-md shadow-sm transition-colors flex items-center justify-center space-x-2 cursor-pointer"
-            >
-              <CheckCircle2 className="w-4 h-4" />
-              <span>⚡ 解析前 20 大並覆蓋舊資料與試算表</span>
-            </button>
           </div>
         </div>
 
