@@ -159,13 +159,13 @@ export const FundDetailView: React.FC<FundDetailViewProps> = ({
             {activeSnapshot?.date || currentFund.asOfDate}
           </div>
           <div className="text-[11px] text-slate-500 mt-1 flex items-center flex-wrap gap-1">
-            <span>歷史期別 (最多 30 天):</span>
+            <span>歷史期別:</span>
             <select
               value={selectedSnapshotIndex}
               onChange={(e) => setSelectedSnapshotIndex(Number(e.target.value))}
               className="bg-slate-50 text-slate-800 border border-slate-300 rounded px-1.5 py-0.5 text-xs font-semibold"
             >
-              {currentFund.snapshots.slice(0, 30).map((snap, idx) => (
+              {currentFund.snapshots.map((snap, idx) => (
                 <option key={snap.date} value={idx}>
                   {snap.date} (共 {snap.holdings.length} 檔)
                 </option>

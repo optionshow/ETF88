@@ -463,41 +463,81 @@ export const ImportModal: React.FC<ImportModalProps> = ({
         return;
       }
 
-      // 1. JSON backup import
+      // 1. JSON backup import (無天數限制，合併現有資料與匯入期別)
       if (isJsonBackup && parsedJsonFunds) {
-        const cleanedFunds = parsedJsonFunds.map((fund) => {
-          const validSnapshots = (fund.snapshots || [])
-            .filter((s) => validateAndNormalizeDate(s.date || s.asOfDate) !== null)
-            .map((s) => {
-              const normDate = validateAndNormalizeDate(s.date || s.asOfDate)!;
-              return {
+        // Initialize map with all current valid funds
+        const resultMap = new Map<string, FundData>();
+        validFunds.forEach((f) => {
+          const match = findFundMatch(f.code, f.name);
+          const key = match?.id || f.id;
+          resultMap.set(key, { ...f });
+        });
+
+        parsedJsonFunds.forEach((fund) => {
+          const matchedExisting = findFundMatch(fund.code, fund.name) ||
+            validFunds.find((f) => (f.code || '').replace('.TW', '').toUpperCase() === (fund.code || '').replace('.TW', '').toUpperCase());
+          const targetFund = matchedExisting || fund;
+          const targetKey = targetFund.id;
+
+          const existingInMap = resultMap.get(targetKey) || targetFund;
+          const snapMap = new Map<string, any>();
+
+          // 先載入目前系統中的現有期別（如今日已自動抓取的 9/18 即時最新資料）
+          (existingInMap?.snapshots || []).forEach((s) => {
+            const normDate = validateAndNormalizeDate(s.date || s.asOfDate);
+            if (normDate) {
+              snapMap.set(normDate, {
                 ...s,
                 date: normDate,
                 asOfDate: normDate,
-              };
-            });
-
-          validSnapshots.sort((a, b) => {
-            const tA = new Date(String(a.date || a.asOfDate || '').replace(/\//g, '-')).getTime() || 0;
-            const tB = new Date(String(b.date || b.asOfDate || '').replace(/\//g, '-')).getTime() || 0;
-            return tB - tA;
+              });
+            }
           });
 
-          // 系統最多容納最新 30 天，超過自動截取最新 30 天（刪除最早天數）
-          const cappedSnapshots = validSnapshots.slice(0, 30);
+          // 再將備份檔中的所有歷史期別合併進來（無天數限制）
+          (fund.snapshots || []).forEach((s) => {
+            const normDate = validateAndNormalizeDate(s.date || s.asOfDate);
+            if (normDate) {
+              const prev = snapMap.get(normDate);
+              const prevValid = prev && Array.isArray(prev.holdings) && prev.holdings.length > 0;
+              const currValid = Array.isArray(s.holdings) && s.holdings.length > 0;
+              if (!prev || (!prevValid && currValid)) {
+                snapMap.set(normDate, {
+                  ...s,
+                  date: normDate,
+                  asOfDate: normDate,
+                });
+              }
+            }
+          });
 
-          return {
-            ...fund,
-            asOfDate: cappedSnapshots[0]?.date || fund.asOfDate,
-            snapshots: cappedSnapshots,
+          const allSnapshots = Array.from(snapMap.values()).sort((a, b) => {
+            const dA = String(a.date || a.asOfDate || '');
+            const dB = String(b.date || b.asOfDate || '');
+            return dB.localeCompare(dA);
+          });
+
+          resultMap.set(targetKey, {
+            ...existingInMap,
+            id: targetFund.id,
+            code: targetFund.code,
+            name: targetFund.name,
+            url: targetFund.url || existingInMap.url,
+            manager: targetFund.manager || existingInMap.manager,
+            category: targetFund.category || existingInMap.category,
+            asOfDate: allSnapshots[0]?.date || existingInMap.asOfDate,
+            navDate: allSnapshots[0]?.date || existingInMap.navDate,
+            snapshots: allSnapshots,
             lastUpdated: new Date().toLocaleString('zh-TW'),
-          };
+          });
         });
 
-        const msg = `✅ 成功自備份檔匯入 ${cleanedFunds.length} 檔基金！共載入 ${parseResult.validCount} 個有效期別` +
+        const mergedFunds = Array.from(resultMap.values());
+
+        const msg = `✅ 成功自備份檔匯入 ${parsedJsonFunds.length} 檔基金！共載入 ${parseResult.validCount} 個有效期別（無天數限制，完整保留並合併所有歷史期別）` +
           (parseResult.skippedDueToInvalidDateCount > 0 ? `（已自動省略 ${parseResult.skippedDueToInvalidDateCount} 筆日期不合法的期別）` : '');
 
-        onImportSuccess(cleanedFunds, msg);
+        onImportSuccess(mergedFunds, msg);
         onClose();
         return;
       }
@@ -558,19 +598,17 @@ export const ImportModal: React.FC<ImportModalProps> = ({
           totalUpdatedHoldings += holdings.length;
         });
 
-        // Sort snapshots by date descending (latest first) and keep at most latest 30 days
+        // Sort snapshots by date descending (latest first) without 30-day limit
         updatedSnapshots.sort((a, b) => {
-          const tA = new Date(String(a.date || a.asOfDate || '').replace(/\//g, '-')).getTime() || 0;
-          const tB = new Date(String(b.date || b.asOfDate || '').replace(/\//g, '-')).getTime() || 0;
-          return tB - tA;
+          const dA = String(a.date || a.asOfDate || '');
+          const dB = String(b.date || b.asOfDate || '');
+          return dB.localeCompare(dA);
         });
-
-        const cappedSnapshots = updatedSnapshots.slice(0, 30);
 
         updatedFundsMap.set(fundId, {
           ...existingFund,
-          asOfDate: cappedSnapshots[0]?.date || existingFund.asOfDate,
-          snapshots: cappedSnapshots,
+          asOfDate: updatedSnapshots[0]?.date || existingFund.asOfDate,
+          snapshots: updatedSnapshots,
           lastUpdated: new Date().toLocaleString('zh-TW'),
         });
 
@@ -649,7 +687,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({
                 <strong className="text-blue-700 font-black">E:</strong> 目前股價
               </div>
               <div className="bg-white px-2 py-1 rounded border border-blue-100 shadow-2xs">
-                <strong className="text-blue-700 font-black">F:</strong> 持股市值(
+                <strong className="text-blue-700 font-black">F:</strong> 持股市值(元)
               </div>
               <div className="bg-white px-2 py-1 rounded border border-blue-100 shadow-2xs">
                 <strong className="text-blue-700 font-black">G:</strong> 投資股數
@@ -660,7 +698,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({
             </div>
             <div className="text-[11px] text-blue-800 pt-0.5 flex items-center gap-1.5">
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-              <span>系統會自動讀取 <strong>[A 基金代碼]</strong> 或 <strong>[B 基金名稱]</strong>，分別自動路由匯入至各基金個股清單！</span>
+              <span>系統會自動讀取 <strong>[A 基金代碼]</strong> 或 <strong>[B 基金名稱]</strong>，分別自動路由匯入至各基金個股清單（網頁與匯入無天數限制）！</span>
             </div>
           </div>
 
@@ -668,7 +706,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({
           <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs flex items-center justify-between">
             <div className="flex items-center space-x-2">
               <span className="inline-flex items-center justify-center w-2 h-2 rounded-full bg-blue-600 ring-4 ring-blue-100"></span>
-              <span className="font-bold text-slate-800">匯入預設範圍：全部基金 ({validFunds.length} 檔)</span>
+              <span className="font-bold text-slate-800">匯入預設範圍：全部基金 ({validFunds.length} 檔，無天數限制)</span>
             </div>
             <span className="text-slate-500 font-mono text-[11px]">
               依 A 欄 (代碼) 或 B 欄 (名稱) 自動各別匯入各基金

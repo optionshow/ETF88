@@ -179,10 +179,11 @@ export function deduplicateFunds(funds: FundData[]): FundData[] {
         asOfDate: normalizeDateString(s.asOfDate || s.date),
         holdings: deduplicateSnapshotHoldings(s.holdings || []),
       }))
-      .sort(
-        (a, b) => new Date(b.date.replace(/\//g, '-')).getTime() - new Date(a.date.replace(/\//g, '-')).getTime()
-      )
-      .slice(0, MAX_SNAPSHOT_DAYS);
+      .sort((a, b) => {
+        const dA = normalizeDateString(a.date || a.asOfDate);
+        const dB = normalizeDateString(b.date || b.asOfDate);
+        return dB.localeCompare(dA);
+      });
 
     if (!map.has(key)) {
       map.set(key, {
@@ -211,14 +212,16 @@ export function deduplicateFunds(funds: FundData[]): FundData[] {
         const prevValid = prev && Array.isArray(prev.holdings) && prev.holdings.some((h: any) => Number(h.shares) > 0 || Number(h.ratio) > 0);
         const currValid = Array.isArray(s.holdings) && s.holdings.some((h: any) => Number(h.shares) > 0 || Number(h.ratio) > 0);
 
-        if (!prev || (!prevValid && currValid)) {
+        if (!prev || !prevValid || currValid) {
           snapMap.set(k, s);
         }
       });
 
-      const mergedSnaps = Array.from(snapMap.values()).sort(
-        (a, b) => new Date((b.date || b.asOfDate).replace(/\//g, '-')).getTime() - new Date((a.date || a.asOfDate).replace(/\//g, '-')).getTime()
-      ).slice(0, MAX_SNAPSHOT_DAYS);
+      const mergedSnaps = Array.from(snapMap.values()).sort((a, b) => {
+        const dA = normalizeDateString(a.date || a.asOfDate);
+        const dB = normalizeDateString(b.date || b.asOfDate);
+        return dB.localeCompare(dA);
+      });
 
       map.set(key, {
         ...existingFund,
@@ -245,9 +248,11 @@ export function deduplicateFunds(funds: FundData[]): FundData[] {
   });
 
   return Array.from(map.values()).map((fund) => {
-    const sorted = (fund.snapshots || []).sort(
-      (a, b) => new Date((b.date || b.asOfDate).replace(/\//g, '-')).getTime() - new Date((a.date || a.asOfDate).replace(/\//g, '-')).getTime()
-    ).slice(0, MAX_SNAPSHOT_DAYS);
+    const sorted = (fund.snapshots || []).sort((a, b) => {
+      const dA = normalizeDateString(a.date || a.asOfDate);
+      const dB = normalizeDateString(b.date || b.asOfDate);
+      return dB.localeCompare(dA);
+    });
     return {
       ...fund,
       asOfDate: sorted[0]?.asOfDate || sorted[0]?.date || fund.asOfDate,
@@ -318,11 +323,12 @@ export function getSavedFunds(): FundData[] {
             };
           });
 
-          // Sort snapshots descending by date and cap at MAX_SNAPSHOT_DAYS (30)
-          snapshots.sort(
-            (a, b) => new Date((b.date || b.asOfDate).replace(/\//g, '-')).getTime() - new Date((a.date || a.asOfDate).replace(/\//g, '-')).getTime()
-          );
-          snapshots = snapshots.slice(0, MAX_SNAPSHOT_DAYS);
+          // Sort snapshots descending by date (no day limit)
+          snapshots.sort((a, b) => {
+            const dA = normalizeDateString(a.date || a.asOfDate);
+            const dB = normalizeDateString(b.date || b.asOfDate);
+            return dB.localeCompare(dA);
+          });
 
           return {
             ...fund,
@@ -483,13 +489,24 @@ export async function fetchLiveFundData(fundCodeOrUrl: string, existingFund?: Fu
     );
     const targetExisting = existingFund || savedFund;
 
+    // Send only lightweight meta and latest 1-2 snapshots to avoid bulky HTTP payload
+    const lightweightExisting = targetExisting
+      ? {
+          id: targetExisting.id,
+          code: targetExisting.code,
+          name: targetExisting.name,
+          currentNav: targetExisting.currentNav,
+          snapshots: (targetExisting.snapshots || []).slice(0, 2),
+        }
+      : undefined;
+
     const res = await fetch('/api/scrape-fund', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         fundCode: fundCodeOrUrl,
         fundUrl: fundCodeOrUrl,
-        existingFund: targetExisting,
+        existingFund: lightweightExisting,
       }),
     });
 
@@ -535,21 +552,18 @@ export async function fetchLiveFundData(fundCodeOrUrl: string, existingFund?: Fu
         if (k) snapMap.set(k, s);
       });
 
-      // If current date already has manual data, do NOT overwrite it!
-      const existingSnap = snapMap.get(normDate);
-      if (existingSnap && existingSnap.isManual) {
-        console.log(`[Scraper] Date ${normDate} has manual holdings, skipping auto-overwrite.`);
-      } else {
-        snapMap.set(normDate, newSnapshot);
-      }
+      // Always update live scraped snapshot for normDate
+      snapMap.set(normDate, newSnapshot);
 
       const updatedSnapshots = Array.from(snapMap.values()).map((s) => ({
         ...s,
         date: normalizeDateString(s.date || s.asOfDate),
         asOfDate: normalizeDateString(s.asOfDate || s.date),
-      })).sort(
-        (a, b) => new Date(b.date.replace(/\//g, '-')).getTime() - new Date(a.date.replace(/\//g, '-')).getTime()
-      ).slice(0, MAX_SNAPSHOT_DAYS);
+      })).sort((a, b) => {
+        const dA = normalizeDateString(a.date || a.asOfDate);
+        const dB = normalizeDateString(b.date || b.asOfDate);
+        return dB.localeCompare(dA);
+      });
 
       const latestDate = updatedSnapshots[0]?.asOfDate || normDate;
 
@@ -570,19 +584,14 @@ export async function fetchLiveFundData(fundCodeOrUrl: string, existingFund?: Fu
       };
 
       return updatedFund;
+    } else {
+      console.warn(`[Scrape] API returned unsuccessful result for ${fundCodeOrUrl}:`, result);
     }
   } catch (err) {
-    console.warn('Scraping service failed or backend unreachable, fallbacking to cached preset:', err);
+    console.warn('Scraping service failed or backend unreachable:', err);
   }
 
-  // Fallback if network or live scraping fails
-  const code = fundCodeOrUrl.toUpperCase().trim();
-  const officialMeta = getOfficialMetadata(code);
-  const searchKey = officialMeta?.code || code;
-  const found = (existingFund && (existingFund.code.toUpperCase().trim() === searchKey || existingFund.id.toUpperCase().trim() === searchKey))
-    ? existingFund
-    : getSavedFunds().find((f) => f.code.toUpperCase().trim() === searchKey || f.id.toUpperCase().trim() === searchKey);
-  return found || null;
+  return null;
 }
 
 // Calculate Date-to-Date Holding Changes (新進/加碼/減碼/出清)

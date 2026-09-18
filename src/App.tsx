@@ -80,9 +80,9 @@ export default function App() {
   const handleRefreshAll = async () => {
     setIsRefreshing(true);
     try {
-      const currentSaved = getSavedFunds();
+      const currentList = funds && funds.length > 0 ? funds : getSavedFunds();
       let updatedCount = 0;
-      const newFundsList = [...currentSaved];
+      const newFundsList = [...currentList];
 
       for (let i = 0; i < newFundsList.length; i++) {
         const fund = newFundsList[i];
@@ -104,7 +104,12 @@ export default function App() {
       setFunds(listWithPrices);
       saveFunds(listWithPrices);
 
-      showToast(`✅ 每日更新完成！成功自動抓取 ${updatedCount} 檔基金最新持股明細與即時股價！`);
+      if (updatedCount > 0) {
+        const latestDate = listWithPrices[0]?.asOfDate || '最新';
+        showToast(`✅ 每日更新完成！成功自動抓取 ${updatedCount} 檔基金最新持股明細（截至 ${latestDate}）與即時股價！`);
+      } else {
+        showToast(`✅ 每日更新完成！所有基金持股已為最新期別，並已同步最新即時股價！`);
+      }
     } catch (e: any) {
       showToast(`每日更新失敗: ${e.message}`, 'error');
     } finally {
@@ -128,21 +133,29 @@ export default function App() {
 
   const handleRefreshSingle = async (fundCode: string) => {
     setIsRefreshing(true);
-    const res = await fetchLiveFundData(fundCode);
-    if (res) {
-      let updated = funds.map((f) => (f.code.toUpperCase() === fundCode.toUpperCase() ? res : f));
-      try {
-        updated = await fetchAndUpdateLiveStockPrices(updated);
-      } catch (e) {
-        console.warn('Single refresh stock price update error:', e);
+    try {
+      const existing = funds.find(
+        (f) => f.code.toUpperCase() === fundCode.toUpperCase() || f.id.toUpperCase() === fundCode.toUpperCase()
+      );
+      const res = await fetchLiveFundData(fundCode, existing);
+      if (res) {
+        let updated = funds.map((f) => (f.code.toUpperCase() === fundCode.toUpperCase() ? res : f));
+        try {
+          updated = await fetchAndUpdateLiveStockPrices(updated);
+        } catch (e) {
+          console.warn('Single refresh stock price update error:', e);
+        }
+        setFunds(updated);
+        saveFunds(updated);
+        showToast(`✅ 已完成 ${res.name} 的持股明細（截至 ${res.asOfDate}）與最新股價更新！`);
+      } else {
+        showToast(`擷取 ${fundCode} 失敗，未能從官方網站獲取最新資料，請稍後重試。`, 'error');
       }
-      setFunds(updated);
-      saveFunds(updated);
-      showToast(`已完成 ${res.name} 的持股明細與最新股價更新！`);
-    } else {
-      showToast(`擷取 ${fundCode} 失敗，請確認網路與網址。`, 'error');
+    } catch (err: any) {
+      showToast(`更新失敗: ${err.message}`, 'error');
+    } finally {
+      setIsRefreshing(false);
     }
-    setIsRefreshing(false);
   };
 
   const handleImportSuccess = async (updatedFunds: FundData[], message: string) => {
